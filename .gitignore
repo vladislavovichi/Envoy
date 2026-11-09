@@ -219,3 +219,6 @@ __marimo__/
 
 # PDF
 *.pdf
+
+# Superpowers Cache
+.superpowers/
