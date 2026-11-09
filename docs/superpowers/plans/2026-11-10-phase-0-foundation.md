@@ -251,7 +251,7 @@ git commit -m "chore: project scaffold with lint, typing and layer contracts"
 - Produces:
   - `class UpdateSource(Protocol): def updates(self) -> AsyncIterator[Update]`.
   - `class MessageSender(Protocol): async def send_message(self, chat_id: int, text: str, *, reply_markup: ReplyMarkup | None = None) -> SentMessage`.
-  - `class ChatSurface(Protocol): capabilities: SurfaceCapabilities` (`private_context: bool`, `ephemeral: bool`, `checklist_native: bool`).
+  - `class ChatSurface(Protocol): capabilities: SurfaceCapabilities` (`private_context: bool`, `ephemeral: bool`, `checklist_native: bool`). Флаг `ephemeral` означает только «временный просмотр» (окно 15 с, доставка не гарантирована, §12.6): на ephemeral не строятся решения и таймауты. Порт ответа на callback ephemeral-сообщением вводится в Фазе 4 отдельным классом без правок ядра.
   - Доменные DTO `Update`, `SentMessage`, `ReplyMarkup` — собственные, не из `aiogram`.
   - `tg_fake_api.FakeBotApiServer` — самостоятельный пакет в репозитории, не импортирует ничего из `envoy` (контракт import-linter `independent`), знает только формат Bot API; при необходимости выносится в отдельный пакет переносом каталога и своим `pyproject.toml`. Если появится поддерживаемый fake с лицензией и поддержкой актуального Bot API, он подставляется вместо него, а проходит тот же `tests/contract/test_fake_bot_api.py`. Реализован на `aiohttp`: `sendMessage`, `getUpdates`, `setWebhook`, `getMe`; методы `inject_update(...)`, `fail_next(method, error_code, retry_after=None)`, `calls: list[RecordedCall]`; формат ответов — как в Bot API (`{"ok": ..., "result": ...}` / `{"ok": false, "error_code": 429, "parameters": {"retry_after": n}}`).
 
@@ -292,9 +292,10 @@ git commit -m "chore: project scaffold with lint, typing and layer contracts"
 - Produces:
   - `AiogramAdapter(token: str, api_base: str, queue: OutboundQueue)` реализует `UpdateSource` и `MessageSender`; весь `aiogram` импортируется только здесь; ошибка `TelegramRetryAfter` → `RetryAfter`; метод, которого нет в `aiogram`, вызывается через `async def call_raw(self, method: str, **params) -> Any` (aiogram `TelegramMethod` с произвольным именем либо `Bot.session.make_request`).
   - `TelegramDependency(method: str, since_api: str, used_in: str)`; `REGISTRY: tuple[TelegramDependency, ...]` (`sendMessage`, `getUpdates`, `setWebhook`, `getMe`, `sendChecklist`, `answerGuestQuery`, `refundStarPayment`, `createForumTopic`); `def missing_in(schema_methods: set[str]) -> list[str]`.
+  - Неизвестные апдейты и служебные сообщения (например, `paid_messages_waived` из 10.4) адаптер не роняет: тест `test_adapter_maps_unknown_update_to_ignored_dto`; их обработка в `InboundFilter` описана в Фазе 1 (Task 5, Task 8).
   - Фикстура `bot_api_methods.json` — список методов из официального описания API; обновляется отдельной командой `poetry run python -m envoy.telegram.dependencies --refresh`, CI только читает фикстуру.
 
-- [ ] **Step 1: Тесты** — `test_registry_methods_exist_in_fixture`, `test_registry_has_no_duplicates`, `test_adapter_sends_message_via_fake`, `test_adapter_yields_injected_update`, `test_adapter_maps_429_to_retry_after`, `test_adapter_call_raw_unknown_method_hits_fake_with_method_name`, `test_secret_token_header_sent_for_webhook_mode`; юнит-уровень без сервера на `aioresponses`: `test_adapter_builds_send_message_request_exactly`, `test_adapter_parses_error_envelope`.
+- [ ] **Step 1: Тесты** — `test_registry_methods_exist_in_fixture`, `test_registry_has_no_duplicates`, `test_adapter_sends_message_via_fake`, `test_adapter_yields_injected_update`, `test_adapter_maps_429_to_retry_after`, `test_adapter_call_raw_unknown_method_hits_fake_with_method_name`, `test_adapter_maps_unknown_update_to_ignored_dto`, `test_secret_token_header_sent_for_webhook_mode`; юнит-уровень без сервера на `aioresponses`: `test_adapter_builds_send_message_request_exactly`, `test_adapter_parses_error_envelope`.
 - [ ] **Step 2:** Run → FAIL.
 - [ ] **Step 3:** Реализовать адаптер на `aiogram` (`Bot` с `TelegramAPIServer.from_base(api_base)`); команду `--refresh` реализовать скачиванием официальной страницы API и разбором имён методов `lxml`/`beautifulsoup4` (добавить через `poetry add --group dev`).
 - [ ] **Step 4:** Run → PASS.
@@ -311,12 +312,12 @@ git commit -m "chore: project scaffold with lint, typing and layer contracts"
 - Consumes: все реестры и реализации Tasks 2, 6, 7, 10.
 - Produces:
   - `Settings(BaseSettings)` (`pydantic-settings`, префикс `ENVOY_`): `journal_store: str`, `telegram_transport: str`, `database_url: SecretStr | None`, `bot_token: SecretStr | None`, `agent_key: SecretStr`, `master_key: SecretStr`, лимиты очереди.
-  - `configure_logging(private_fields: frozenset[str]) -> None` — `structlog` с процессором, заменяющим значения `private_fields` и любых `SecretStr` на `"***"`; приватные имена по умолчанию: `reservation`, `weights`, `opponent_model`, `mandate`, `utility`, `private_key`, `token`.
+  - `configure_logging(private_fields: frozenset[str]) -> None` — `structlog` с процессором, заменяющим значения `private_fields` и любых `SecretStr` на `"***"`; приватные имена по умолчанию: `reservation`, `weights`, `opponent_model`, `mandate`, `utility`, `private_key`, `token`. Тот же процессор заменяет в любых строковых значениях номера банковских карт (13–19 цифр с допустимыми пробелами и дефисами, проверка Луна через `python-stdnum`, `stdnum.luhn`) на `"[card]"` (§9.2); собственная реализация алгоритма Луна не пишется.
   - `build_application(settings: Settings) -> Application` — единственное место, где импортируются конкретные классы; выбор реализаций по `settings` через `Registry` (`journal_store`: `memory|postgres`; `telegram_transport`: `fake|aiogram`).
   - `SettingsConfigDict(env_file=".env", env_prefix="ENVOY_")`; обязательные секреты без значений по умолчанию, отсутствие любого → понятная ошибка запуска; `.env.example` содержит все ключи с пустыми значениями и без реальных данных; тест `test_env_file_is_gitignored` (`git check-ignore .env` возвращает 0) и `test_env_example_keys_match_settings` (ключи `.env.example` совпадают с полями `Settings`).
 
 - [ ] **Step 1: Тесты**
-  - `test_private_field_masked_in_log_event`, `test_secret_str_never_rendered`, `test_nested_private_field_masked`, `test_non_private_field_kept`.
+  - `test_private_field_masked_in_log_event`, `test_secret_str_never_rendered`, `test_nested_private_field_masked`, `test_non_private_field_kept`, `test_card_number_in_text_masked_in_log` (с пробелами и дефисами), `test_digits_failing_luhn_kept`, `test_card_number_inside_nested_value_masked`.
   - `test_bootstrap_swaps_journal_store_by_config` — `journal_store=memory` и `journal_store=postgres` дают приложения с одинаковым наблюдаемым поведением (запись, чтение, верификация) без правок в `journal`/`domain`.
   - `test_bootstrap_swaps_telegram_transport_by_config` (`fake` ↔ `aiogram` против `FakeBotApiServer`).
   - `test_unknown_implementation_name_fails_fast_with_known_list`.
