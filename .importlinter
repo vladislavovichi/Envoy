@@ -1,0 +1,60 @@
+[importlinter]
+root_packages =
+    envoy
+    tg_fake_api
+include_external_packages = True
+
+[importlinter:contract:composition]
+name = Infrastructure implementations are imported only by composition root
+type = forbidden
+source_modules =
+    envoy.domain
+    envoy.ports
+    envoy.crypto
+    envoy.mandate
+    envoy.journal
+    envoy.observability
+    envoy.app.application
+    envoy.app.settings
+    envoy.telegram.outbound
+    envoy.telegram.ports
+    envoy.telegram.dependencies
+    envoy.telegram.memory
+forbidden_modules =
+    envoy.persistence
+    envoy.telegram.adapter
+
+[importlinter:contract:domain]
+name = Domain has no outward dependencies
+type = forbidden
+source_modules =
+    envoy.domain
+forbidden_modules =
+    envoy.ports
+    envoy.crypto
+    envoy.mandate
+    envoy.journal
+    envoy.telegram
+    envoy.persistence
+    envoy.app
+    envoy.observability
+
+[importlinter:contract:core]
+name = Pure core cannot depend on adapters
+type = forbidden
+source_modules =
+    envoy.crypto
+    envoy.mandate
+    envoy.journal
+forbidden_modules =
+    envoy.telegram
+    envoy.persistence
+    aiogram
+    sqlalchemy
+
+[importlinter:contract:fake]
+name = Fake Bot API is independent
+type = independence
+modules =
+    envoy
+    tg_fake_api

@@ -1,0 +1,10 @@
+services:
+  postgres:
+    ports:
+      - '127.0.0.1:${ENVOY_POSTGRES_PORT:-5433}:5432'
+  migrate:
+    environment:
+      ENVOY_TELEGRAM_TRANSPORT: fake
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests

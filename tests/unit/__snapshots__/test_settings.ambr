@@ -1,0 +1,20 @@
+# serializer version: 1
+# name: test_settings_snapshot
+  list([
+    'agent_key',
+    'bot_token',
+    'database_url',
+    'global_rate',
+    'journal_store',
+    'master_key',
+    'max_retry_after',
+    'per_chat_rate',
+    'postgres_db',
+    'postgres_password',
+    'postgres_port',
+    'postgres_user',
+    'telegram_api_base',
+    'telegram_transport',
+    'test_database_url',
+  ])
+# ---

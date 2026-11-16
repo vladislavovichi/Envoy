@@ -1,0 +1,695 @@
+# serializer version: 1
+# name: test_mandate_schema_snapshot
+  dict({
+    '$defs': dict({
+      'And': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'kind': dict({
+            'const': 'and',
+            'title': 'Kind',
+            'type': 'string',
+          }),
+          'predicates': dict({
+            'items': dict({
+              '$ref': '#/$defs/Predicate',
+            }),
+            'minItems': 1,
+            'title': 'Predicates',
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'kind',
+          'predicates',
+        ]),
+        'title': 'And',
+        'type': 'object',
+      }),
+      'Cmp': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'issue': dict({
+            'title': 'Issue',
+            'type': 'string',
+          }),
+          'kind': dict({
+            'const': 'cmp',
+            'default': 'cmp',
+            'title': 'Kind',
+            'type': 'string',
+          }),
+          'op': dict({
+            'enum': list([
+              '<=',
+              '>=',
+              'in',
+              'between',
+              'not_in',
+            ]),
+            'title': 'Op',
+            'type': 'string',
+          }),
+          'value': dict({
+            '$ref': '#/$defs/JsonValue',
+          }),
+        }),
+        'required': list([
+          'issue',
+          'op',
+          'value',
+        ]),
+        'title': 'Cmp',
+        'type': 'object',
+      }),
+      'DatetimeIssue': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'id': dict({
+            'title': 'Id',
+            'type': 'string',
+          }),
+          'kind': dict({
+            'const': 'datetime',
+            'title': 'Kind',
+            'type': 'string',
+          }),
+          'maximum': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'title': 'Maximum',
+          }),
+          'minimum': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'title': 'Minimum',
+          }),
+        }),
+        'required': list([
+          'id',
+          'kind',
+        ]),
+        'title': 'DatetimeIssue',
+        'type': 'object',
+      }),
+      'DurationIssue': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'id': dict({
+            'title': 'Id',
+            'type': 'string',
+          }),
+          'kind': dict({
+            'const': 'duration',
+            'title': 'Kind',
+            'type': 'string',
+          }),
+          'maximum': dict({
+            'anyOf': list([
+              dict({
+                'format': 'duration',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'title': 'Maximum',
+          }),
+          'minimum': dict({
+            'anyOf': list([
+              dict({
+                'format': 'duration',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'title': 'Minimum',
+          }),
+        }),
+        'required': list([
+          'id',
+          'kind',
+        ]),
+        'title': 'DurationIssue',
+        'type': 'object',
+      }),
+      'EnumIssue': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'choices': dict({
+            'items': dict({
+              'type': 'string',
+            }),
+            'title': 'Choices',
+            'type': 'array',
+          }),
+          'id': dict({
+            'title': 'Id',
+            'type': 'string',
+          }),
+          'kind': dict({
+            'const': 'enum',
+            'title': 'Kind',
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'id',
+          'kind',
+          'choices',
+        ]),
+        'title': 'EnumIssue',
+        'type': 'object',
+      }),
+      'Escalation': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'always': dict({
+            'default': list([
+            ]),
+            'items': dict({
+              'type': 'string',
+            }),
+            'title': 'Always',
+            'type': 'array',
+          }),
+        }),
+        'title': 'Escalation',
+        'type': 'object',
+      }),
+      'IntegerIssue': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'id': dict({
+            'title': 'Id',
+            'type': 'string',
+          }),
+          'kind': dict({
+            'const': 'integer',
+            'title': 'Kind',
+            'type': 'string',
+          }),
+          'maximum': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'title': 'Maximum',
+          }),
+          'minimum': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'title': 'Minimum',
+          }),
+        }),
+        'required': list([
+          'id',
+          'kind',
+        ]),
+        'title': 'IntegerIssue',
+        'type': 'object',
+      }),
+      'Issue': dict({
+        'discriminator': dict({
+          'mapping': dict({
+            'datetime': '#/$defs/DatetimeIssue',
+            'duration': '#/$defs/DurationIssue',
+            'enum': '#/$defs/EnumIssue',
+            'integer': '#/$defs/IntegerIssue',
+            'money': '#/$defs/MoneyIssue',
+            'place': '#/$defs/PlaceIssue',
+          }),
+          'propertyName': 'kind',
+        }),
+        'oneOf': list([
+          dict({
+            '$ref': '#/$defs/MoneyIssue',
+          }),
+          dict({
+            '$ref': '#/$defs/DatetimeIssue',
+          }),
+          dict({
+            '$ref': '#/$defs/PlaceIssue',
+          }),
+          dict({
+            '$ref': '#/$defs/EnumIssue',
+          }),
+          dict({
+            '$ref': '#/$defs/IntegerIssue',
+          }),
+          dict({
+            '$ref': '#/$defs/DurationIssue',
+          }),
+        ]),
+      }),
+      'JsonValue': dict({
+      }),
+      'Limits': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'allow': dict({
+            'default': list([
+            ]),
+            'items': dict({
+              'type': 'string',
+            }),
+            'title': 'Allow',
+            'type': 'array',
+          }),
+          'deadline': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'title': 'Deadline',
+          }),
+          'deny': dict({
+            'default': list([
+            ]),
+            'items': dict({
+              'type': 'string',
+            }),
+            'title': 'Deny',
+            'type': 'array',
+          }),
+          'max_deals_per_day': dict({
+            'default': 1,
+            'minimum': 0,
+            'title': 'Max Deals Per Day',
+            'type': 'integer',
+          }),
+          'max_deposit': dict({
+            'default': 0,
+            'minimum': 0,
+            'title': 'Max Deposit',
+            'type': 'integer',
+          }),
+          'max_rounds': dict({
+            'exclusiveMinimum': 0,
+            'title': 'Max Rounds',
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'max_rounds',
+        ]),
+        'title': 'Limits',
+        'type': 'object',
+      }),
+      'MoneyIssue': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'currency': dict({
+            'default': 'RUB',
+            'title': 'Currency',
+            'type': 'string',
+          }),
+          'id': dict({
+            'title': 'Id',
+            'type': 'string',
+          }),
+          'kind': dict({
+            'const': 'money',
+            'title': 'Kind',
+            'type': 'string',
+          }),
+          'maximum': dict({
+            'anyOf': list([
+              dict({
+                'type': 'number',
+              }),
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'title': 'Maximum',
+          }),
+          'minimum': dict({
+            'anyOf': list([
+              dict({
+                'type': 'number',
+              }),
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'title': 'Minimum',
+          }),
+        }),
+        'required': list([
+          'id',
+          'kind',
+        ]),
+        'title': 'MoneyIssue',
+        'type': 'object',
+      }),
+      'Not': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'kind': dict({
+            'const': 'not',
+            'title': 'Kind',
+            'type': 'string',
+          }),
+          'predicate': dict({
+            '$ref': '#/$defs/Predicate',
+          }),
+        }),
+        'required': list([
+          'kind',
+          'predicate',
+        ]),
+        'title': 'Not',
+        'type': 'object',
+      }),
+      'Or': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'kind': dict({
+            'const': 'or',
+            'title': 'Kind',
+            'type': 'string',
+          }),
+          'predicates': dict({
+            'items': dict({
+              '$ref': '#/$defs/Predicate',
+            }),
+            'minItems': 1,
+            'title': 'Predicates',
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'kind',
+          'predicates',
+        ]),
+        'title': 'Or',
+        'type': 'object',
+      }),
+      'PiecewiseLinear': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'points': dict({
+            'items': dict({
+              'maxItems': 2,
+              'minItems': 2,
+              'prefixItems': list([
+                dict({
+                  'type': 'number',
+                }),
+                dict({
+                  'type': 'number',
+                }),
+              ]),
+              'type': 'array',
+            }),
+            'minItems': 2,
+            'title': 'Points',
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'points',
+        ]),
+        'title': 'PiecewiseLinear',
+        'type': 'object',
+      }),
+      'PlaceIssue': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'choices': dict({
+            'default': list([
+            ]),
+            'items': dict({
+              'type': 'string',
+            }),
+            'title': 'Choices',
+            'type': 'array',
+          }),
+          'id': dict({
+            'title': 'Id',
+            'type': 'string',
+          }),
+          'kind': dict({
+            'const': 'place',
+            'title': 'Kind',
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'id',
+          'kind',
+        ]),
+        'title': 'PlaceIssue',
+        'type': 'object',
+      }),
+      'Predicate': dict({
+        'discriminator': dict({
+          'mapping': dict({
+            'and': '#/$defs/And',
+            'cmp': '#/$defs/Cmp',
+            'not': '#/$defs/Not',
+            'or': '#/$defs/Or',
+            'requires': '#/$defs/Requires',
+          }),
+          'propertyName': 'kind',
+        }),
+        'oneOf': list([
+          dict({
+            '$ref': '#/$defs/Cmp',
+          }),
+          dict({
+            '$ref': '#/$defs/And',
+          }),
+          dict({
+            '$ref': '#/$defs/Or',
+          }),
+          dict({
+            '$ref': '#/$defs/Not',
+          }),
+          dict({
+            '$ref': '#/$defs/Requires',
+          }),
+        ]),
+      }),
+      'Requires': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'condition': dict({
+            '$ref': '#/$defs/Predicate',
+          }),
+          'consequence': dict({
+            '$ref': '#/$defs/Predicate',
+          }),
+          'kind': dict({
+            'const': 'requires',
+            'title': 'Kind',
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'kind',
+          'condition',
+          'consequence',
+        ]),
+        'title': 'Requires',
+        'type': 'object',
+      }),
+      'Reservation': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'constraints': dict({
+            'default': list([
+            ]),
+            'items': dict({
+              '$ref': '#/$defs/Predicate',
+            }),
+            'title': 'Constraints',
+            'type': 'array',
+          }),
+          'minimum_utility': dict({
+            'maximum': 1,
+            'minimum': 0,
+            'title': 'Minimum Utility',
+            'type': 'number',
+          }),
+        }),
+        'required': list([
+          'minimum_utility',
+        ]),
+        'title': 'Reservation',
+        'type': 'object',
+      }),
+      'StrategySpec': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'kind': dict({
+            'title': 'Kind',
+            'type': 'string',
+          }),
+          'params': dict({
+            'additionalProperties': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'number',
+                }),
+                dict({
+                  'type': 'integer',
+                }),
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'boolean',
+                }),
+              ]),
+            }),
+            'title': 'Params',
+            'type': 'object',
+          }),
+        }),
+        'required': list([
+          'kind',
+        ]),
+        'title': 'StrategySpec',
+        'type': 'object',
+      }),
+      'UtilitySpec': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'value_functions': dict({
+            'additionalProperties': dict({
+              '$ref': '#/$defs/PiecewiseLinear',
+            }),
+            'title': 'Value Functions',
+            'type': 'object',
+          }),
+          'weights': dict({
+            'additionalProperties': dict({
+              'type': 'number',
+            }),
+            'title': 'Weights',
+            'type': 'object',
+          }),
+        }),
+        'required': list([
+          'weights',
+          'value_functions',
+        ]),
+        'title': 'UtilitySpec',
+        'type': 'object',
+      }),
+    }),
+    'additionalProperties': False,
+    'properties': dict({
+      'escalation': dict({
+        '$ref': '#/$defs/Escalation',
+      }),
+      'hard_constraints': dict({
+        'default': list([
+        ]),
+        'items': dict({
+          '$ref': '#/$defs/Predicate',
+        }),
+        'title': 'Hard Constraints',
+        'type': 'array',
+      }),
+      'issues': dict({
+        'items': dict({
+          '$ref': '#/$defs/Issue',
+        }),
+        'minItems': 1,
+        'title': 'Issues',
+        'type': 'array',
+      }),
+      'limits': dict({
+        '$ref': '#/$defs/Limits',
+      }),
+      'reservation': dict({
+        '$ref': '#/$defs/Reservation',
+      }),
+      'strategy': dict({
+        '$ref': '#/$defs/StrategySpec',
+      }),
+      'template': dict({
+        'enum': list([
+          'meeting',
+          'purchase',
+          'advertisement',
+          'exchange',
+          'join',
+          'freelance',
+        ]),
+        'title': 'Template',
+        'type': 'string',
+      }),
+      'utility': dict({
+        '$ref': '#/$defs/UtilitySpec',
+      }),
+      'version': dict({
+        'default': 1,
+        'minimum': 1,
+        'title': 'Version',
+        'type': 'integer',
+      }),
+    }),
+    'required': list([
+      'template',
+      'issues',
+      'utility',
+      'reservation',
+      'strategy',
+      'limits',
+      'escalation',
+    ]),
+    'title': 'Mandate',
+    'type': 'object',
+  })
+# ---

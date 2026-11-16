@@ -1,0 +1,46 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.15'
+      - run: pipx install poetry==2.2.1
+      - run: poetry check --lock
+      - run: poetry install
+      - run: poetry run black --check .
+      - run: poetry run ruff check
+      - run: poetry run mypy
+      - run: poetry run lint-imports
+      - run: poetry run pytest
+      - run: poetry run coverage report --include='*/envoy/journal/*,*/envoy/crypto/*' --fail-under=90
+      - run: poetry run coverage json -o .coverage.json
+      - run: poetry run python scripts/check_coverage.py .coverage.json
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: cp .env.example .env
+      - run: docker compose -f compose.yaml config --quiet
+      - run: docker compose -f compose.yaml -f compose.dev.yaml config --quiet
+      - run: docker compose -f compose.yaml -f compose.test.yaml --profile test config --quiet
+      - run: rm .env
+      - run: python scripts/create_test_env.py
+      - run: make up
+      - run: make migrate
+      - run: make test
+      - run: docker build --target runtime -f docker/Dockerfile -t envoy-phase0-runtime .
+      - run: >-
+          docker run --rm envoy-phase0-runtime python -c
+          "import importlib.util, os, shutil;
+          assert os.getuid() != 0;
+          assert all(shutil.which(name) is None for name in ('poetry','pytest','black'));
+          assert all(importlib.util.find_spec(name) is None for name in ('poetry','pytest','black'));
+          assert not os.path.exists('/app/.env')"
+      - if: always()
+        run: make down

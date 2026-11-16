@@ -222,3 +222,5 @@ __marimo__/
 
 # Superpowers Cache
 .superpowers/
+pytest-cache-files-*/
+.coverage.json

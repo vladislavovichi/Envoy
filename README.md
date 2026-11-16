@@ -4,7 +4,7 @@
 
 **Telegram-агент, который ведёт переговоры от вашего имени и не выходит за рамки полномочий**
 
-![Status](https://img.shields.io/badge/status-design%20%26%20planning-blue)
+![Status](https://img.shields.io/badge/status-phase%200-blue)
 ![Python](https://img.shields.io/badge/python-asyncio-3776AB)
 ![Bot API](https://img.shields.io/badge/Telegram%20Bot%20API-10.4-26A5E4)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
@@ -29,11 +29,11 @@ Envoy согласует время и место встречи, цену, об
 
 ## Статус
 
-Проект на стадии проектирования: готовы спецификация и планы первых фаз, кода пока нет.
+Реализован фундамент фазы 0: доменные типы, схема мандата, подписанный зашифрованный журнал, PostgreSQL, сменяемый Telegram-транспорт и тестовое окружение. Переговорный процесс добавляется в фазе 1.
 
 | Фаза | Содержание | Состояние |
 |---|---|---|
-| 0. Фундамент | Каркас, CI, домен, журнал, fake Telegram, Docker | план готов |
+| 0. Фундамент | Каркас, CI, домен, журнал, fake Telegram, Docker | реализован |
 | 1. Встреча 1:1 с человеком | Business-подключение, движок, эскалация, чек-лист | план готов |
 | 1б. Виджеты владельца | Дашборд сделки, эскалация с таймером, дневная сводка | в спеке |
 | 2. Агент ↔ агент | Протокол, подписи, Mini App, managed-боты, TLA+ | в спеке |
@@ -117,7 +117,8 @@ INIT ─► HANDSHAKE ─► NEGOTIATING ─► AGREED ─► COMMITTING ─► 
 src/envoy/
   domain/ mandate/ engine/ protocol/ crypto/ privacy/
   multilateral/ execution/ payments/ security/ journal/
-  llm/ telegram/ tg_fake_api/ persistence/ app/ ...
+  llm/ telegram/ persistence/ app/ ...
+src/tg_fake_api/ независимый HTTP fake Bot API
 miniapp/        редактор мандата
 formal/         TLA+ спецификация протокола
 tests/          unit, property, contract, integration, redteam
@@ -129,16 +130,48 @@ docs/           спецификация и планы реализации
 
 ## Запуск
 
-Docker Compose появится в фазе 0. Целевой сценарий:
+Нужны Docker Engine с Compose v2, Python 3.15 и Poetry 2.2.1. Для изолированного локального окружения создайте `.env` с новыми случайными ключами и паролем PostgreSQL:
 
 ```bash
-cp .env.example .env
+python scripts/create_test_env.py
 make up
 make migrate
 make test
+make down
 ```
 
 Все секреты (токены, ключи, `database_url`, `master_key`) хранятся только в `.env`. Файл исключён из git и из образов.
+
+Генератор предназначен для локальных тестов, не перезаписывает существующий `.env` и выбирает `fake`-транспорт. Для своей конфигурации заполните все необходимые поля из `.env.example`; `ENVOY_AGENT_KEY` и `ENVOY_MASTER_KEY` — 32 байта в hex. Для `postgres` нужен `ENVOY_DATABASE_URL`, для `aiogram` — `ENVOY_BOT_TOKEN`. В Compose имя хоста БД — `postgres`, локальный порт задаёт `ENVOY_POSTGRES_PORT`. PostgreSQL хранит данные в отдельном volume; `make down` его сохраняет.
+
+Без Make команды эквивалентны:
+
+```bash
+docker compose -f compose.yaml -f compose.dev.yaml up -d --wait postgres
+docker compose -f compose.yaml -f compose.dev.yaml run --rm migrate
+docker compose -f compose.yaml -f compose.test.yaml --profile test run --rm tests
+docker compose -f compose.yaml -f compose.dev.yaml -f compose.test.yaml --profile test down
+```
+
+Сервис постоянного приложения появится в фазе 1. В фазе 0 Compose запускает PostgreSQL, миграции и проверки. Образ `runtime` содержит только рабочие зависимости и запускается без root.
+
+Локальные проверки:
+
+```bash
+poetry install
+poetry run black --check .
+poetry run ruff check
+poetry run mypy
+poetry run lint-imports
+poetry run pytest
+poetry run coverage report --include='*/envoy/journal/*,*/envoy/crypto/*' --fail-under=90
+poetry run coverage json -o .coverage.json
+poetry run python scripts/check_coverage.py .coverage.json
+```
+
+Тесты БД используют `ENVOY_TEST_DATABASE_URL` из окружения; если он не задан, поднимают временный PostgreSQL через testcontainers. В Compose тесты работают с отдельным экземпляром `postgres-test` в tmpfs, а рабочий `postgres` хранит данные в named volume. Фикстуры отказываются очищать БД с тем же адресом и именем, что у приложения. Схема создаётся только миграциями Alembic. Фикстура методов Telegram обновляется отдельно: `poetry run python -m envoy.telegram.dependencies --refresh`, источник — [официальный Bot API](https://core.telegram.org/bots/api); CI читает сохранённую фикстуру без сети.
+
+В журнал добавлен `session_id`: он связывает запись с цепочкой, входит в подписываемый хэш и AAD шифрования. Порт `JournalCommitter.commit(entry, key)` атомарно сохраняет запись и индивидуальный ключ; PostgreSQL делает это в одной транзакции, in-memory — без передачи управления между изменениями. `KeyVault.put` остаётся отдельным низкоуровневым контрактом. Для UUIDv7 используется стандартная библиотека, для детерминированных идентификаторов — `SequentialIdGenerator`. `AiogramAdapter` реализует транспортный порт, а корень композиции предоставляет приложению отправку через очередь, устраняя циклическую зависимость адаптера и очереди.
 
 ## Качество и безопасность
 

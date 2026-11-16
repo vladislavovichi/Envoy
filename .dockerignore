@@ -1,0 +1,16 @@
+.git
+.venv
+.env
+.env.*
+!.env.example
+.idea
+.superpowers
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.hypothesis
+.coverage*
+htmlcov
+__pycache__
+*.pyc
+pytest-cache-files-*
