@@ -1,46 +1,125 @@
 name: CI
-on: [push, pull_request]
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", "LICENSE"]
+  pull_request:
+    paths-ignore: ["**.md", "docs/**", "LICENSE"]
+
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  python:
-    runs-on: ubuntu-latest
+  lint:
+    name: Lint
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v7
+      - name: Check out
+        uses: actions/checkout@v7
         with:
-          python-version: '3.15'
-      - run: pipx install poetry==2.2.1
-      - run: poetry check --lock
-      - run: poetry install
-      - run: poetry run black --check .
-      - run: poetry run ruff check
-      - run: poetry run mypy
-      - run: poetry run lint-imports
-      - run: poetry run pytest
-      - run: poetry run coverage report --include='*/envoy/journal/*,*/envoy/crypto/*' --fail-under=90
-      - run: poetry run coverage json -o .coverage.json
-      - run: poetry run python scripts/check_coverage.py .coverage.json
-  docker:
-    runs-on: ubuntu-latest
+          persist-credentials: false
+
+      - name: Set up Python and Poetry
+        uses: ./.github/actions/poetry
+
+      - name: Check formatting
+        run: poetry run black --check .
+
+      - name: Check lint
+        run: poetry run ruff check
+
+      - name: Check types
+        run: poetry run mypy
+
+      - name: Check import contracts
+        run: poetry run lint-imports
+
+  tests:
+    name: Python tests
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
-      - run: cp .env.example .env
-      - run: docker compose -f compose.yaml config --quiet
-      - run: docker compose -f compose.yaml -f compose.dev.yaml config --quiet
-      - run: docker compose -f compose.yaml -f compose.test.yaml --profile test config --quiet
-      - run: rm .env
-      - run: python scripts/create_test_env.py
-      - run: make up
-      - run: make migrate
-      - run: make test
-      - run: docker build --target runtime -f docker/Dockerfile -t envoy-phase0-runtime .
-      - run: >-
-          docker run --rm envoy-phase0-runtime python -c
-          "import importlib.util, os, shutil;
-          assert os.getuid() != 0;
-          assert all(shutil.which(name) is None for name in ('poetry','pytest','black'));
-          assert all(importlib.util.find_spec(name) is None for name in ('poetry','pytest','black'));
-          assert not os.path.exists('/app/.env')"
-      - if: always()
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python and Poetry
+        uses: ./.github/actions/poetry
+
+      - name: Run pytest
+        run: poetry run pytest --junitxml=test-results/junit.xml -o junit_family=xunit1
+
+      - name: Publish test report
+        if: ${{ !cancelled() && hashFiles('test-results/junit.xml') != '' }}
+        uses: mikepenz/action-junit-report@v6
+        with:
+          report_paths: test-results/junit.xml
+          annotate_only: true
+          require_tests: true
+          include_time_in_summary: true
+
+      - name: Summarize coverage
+        if: ${{ !cancelled() && hashFiles('.coverage') != '' }}
+        run: poetry run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check journal and crypto coverage
+        run: |
+          poetry run coverage report --include='*/envoy/journal/*,*/envoy/crypto/*' --fail-under=90
+          poetry run coverage json -o .coverage.json
+          poetry run python scripts/check_coverage.py .coverage.json
+
+  docker:
+    name: "Install: Docker"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Validate Compose configurations
+        run: |
+          cp .env.example .env
+          docker compose -f compose.yaml config --quiet
+          docker compose -f compose.yaml -f compose.dev.yaml config --quiet
+          docker compose -f compose.yaml -f compose.test.yaml --profile test config --quiet
+          rm .env
+
+      - name: Generate test environment
+        id: test-env
+        run: python3 scripts/create_test_env.py
+
+      - name: Start PostgreSQL and apply migrations
+        run: make up
+
+      - name: Run Compose tests
+        run: make test
+
+      - name: Build runtime image
+        run: docker build --target runtime -f docker/Dockerfile -t envoy-phase0-runtime .
+
+      - name: Check runtime image
+        run: |
+          docker run --rm -i envoy-phase0-runtime python - <<'PY'
+          import importlib.util
+          import os
+          import shutil
+
+          assert os.getuid() != 0
+          for name in ("poetry", "pytest", "black"):
+              assert shutil.which(name) is None
+              assert importlib.util.find_spec(name) is None
+          assert not os.path.exists("/app/.env")
+          PY
+
+      - name: Stop Compose services
+        if: ${{ always() && steps.test-env.outcome == 'success' }}
         run: make down
