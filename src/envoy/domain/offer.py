@@ -4,7 +4,7 @@ from decimal import Decimal
 from hashlib import sha256
 from types import MappingProxyType
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, field_serializer, field_validator
 
 from envoy.domain.canonical import encode
 from envoy.domain.ids import OfferHash
@@ -27,6 +27,10 @@ class Offer(BaseModel):
     @classmethod
     def freeze_values(cls, values: Mapping[str, IssueValue]) -> Mapping[str, IssueValue]:
         return MappingProxyType(dict(values))
+
+    @field_serializer("values")
+    def serialize_values(self, values: Mapping[str, IssueValue]) -> dict[str, IssueValue]:
+        return dict(values)
 
     def canonical_bytes(self) -> bytes:
         return encode(self.values)

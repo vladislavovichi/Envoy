@@ -1,8 +1,9 @@
 from math import isfinite
-from typing import Self
+from typing import Annotated, Any, Self
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -28,6 +29,31 @@ class Settings(BaseSettings):
     postgres_db: str | None = None
     postgres_port: int = Field(default=5433, ge=1, le=65535)
     test_database_url: SecretStr | None = None
+    owner_ids: Annotated[frozenset[int], NoDecode] = frozenset()
+    default_timezone: str = "Europe/Moscow"
+    agent_name: str = "Envoy"
+    llm: str = "fake"
+    llm_model: str = "claude-opus-5-5"
+    anthropic_api_key: SecretStr | None = None
+    llm_daily_token_budget: int = Field(default=200_000, gt=0)
+    inbound_max_text_length: int = Field(default=2000, gt=0)
+    inbound_rate_per_minute: int = Field(default=20, gt=0)
+
+    @field_validator("owner_ids", mode="before")
+    @classmethod
+    def split_owner_ids(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return frozenset(int(item) for item in value.replace(" ", "").split(",") if item)
+        return value
+
+    @field_validator("default_timezone")
+    @classmethod
+    def known_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError, ValueError:
+            raise ValueError("Unknown timezone") from None
+        return value
 
     @field_validator("agent_key", "master_key")
     @classmethod
@@ -53,4 +79,6 @@ class Settings(BaseSettings):
             raise ValueError("ENVOY_DATABASE_URL is required for postgres")
         if self.telegram_transport == "aiogram" and self.bot_token is None:
             raise ValueError("ENVOY_BOT_TOKEN is required for aiogram")
+        if self.llm == "anthropic" and self.anthropic_api_key is None:
+            raise ValueError("ENVOY_ANTHROPIC_API_KEY is required for anthropic")
         return self

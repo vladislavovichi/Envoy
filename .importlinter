@@ -12,17 +12,42 @@ source_modules =
     envoy.ports
     envoy.crypto
     envoy.mandate
+    envoy.engine
     envoy.journal
+    envoy.security
+    envoy.execution
     envoy.observability
+    envoy.llm.ports
+    envoy.llm.translator
+    envoy.llm.validation
+    envoy.llm.budget
+    envoy.llm.fake
     envoy.app.application
     envoy.app.settings
+    envoy.app.ports
+    envoy.app.memory
+    envoy.app.journal
+    envoy.app.window
+    envoy.app.renderer
+    envoy.app.steps
+    envoy.app.owner_flow
+    envoy.app.session_flow
+    envoy.app.execution_flow
+    envoy.app.processor
+    envoy.app.pipeline
+    envoy.app.recovery
+    envoy.app.runtime
     envoy.telegram.outbound
     envoy.telegram.ports
     envoy.telegram.dependencies
     envoy.telegram.memory
+    envoy.telegram.links
+    envoy.telegram.mapping
 forbidden_modules =
     envoy.persistence
     envoy.telegram.adapter
+    envoy.llm.claude
+    anthropic
 
 [importlinter:contract:domain]
 name = Domain has no outward dependencies
@@ -33,7 +58,11 @@ forbidden_modules =
     envoy.ports
     envoy.crypto
     envoy.mandate
+    envoy.engine
     envoy.journal
+    envoy.security
+    envoy.execution
+    envoy.llm
     envoy.telegram
     envoy.persistence
     envoy.app
@@ -45,12 +74,17 @@ type = forbidden
 source_modules =
     envoy.crypto
     envoy.mandate
+    envoy.engine
+    envoy.execution
     envoy.journal
 forbidden_modules =
     envoy.telegram
     envoy.persistence
+    envoy.llm
+    envoy.app
     aiogram
     sqlalchemy
+    anthropic
 
 [importlinter:contract:fake]
 name = Fake Bot API is independent

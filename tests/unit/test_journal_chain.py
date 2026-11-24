@@ -24,7 +24,7 @@ async def test_single_entry_verifies(journal_parts, payload: bytes) -> None:
 async def test_three_entries_chain_verifies(journal_parts) -> None:
     session, agent, key, store, _, _, _, author = journal_parts
     for _ in range(3):
-        await author.record(JournalEntryType.offer_sent, b"payload", b"commitment")
+        await author.record(JournalEntryType.decided, b"payload", b"commitment")
     entries = await store.read(session)
     assert [entry.seq for entry in entries] == [0, 1, 2]
     JournalVerifier().verify(entries, {agent: key.public()})
@@ -65,7 +65,7 @@ async def test_modified_entry_detected(journal_parts, field: str) -> None:
 async def test_chain_or_signature_tampering_detected(journal_parts, mutation: str) -> None:
     session, agent, key, store, _, _, _, author = journal_parts
     for _ in range(3):
-        await author.record(JournalEntryType.offer_sent, b"data", b"commitment")
+        await author.record(JournalEntryType.decided, b"data", b"commitment")
     entries = await store.read(session)
     if mutation == "reorder":
         entries.reverse()
@@ -93,8 +93,8 @@ async def test_concurrent_appends_produce_gapless_seq(journal_parts) -> None:
     session, agent, key, store, vault, cipher, clock, author = journal_parts
     other = JournalAuthor(session, agent, key, store, store, vault, cipher, clock)
     await asyncio.gather(
-        author.record(JournalEntryType.offer_sent, b"one", b"c"),
-        other.record(JournalEntryType.offer_sent, b"two", b"c"),
+        author.record(JournalEntryType.decided, b"one", b"c"),
+        other.record(JournalEntryType.decided, b"two", b"c"),
     )
     entries = await store.read(session)
     assert [entry.seq for entry in entries] == [0, 1]
@@ -114,7 +114,7 @@ async def test_author_retries_conflict_then_gives_up(journal_parts, mocker) -> N
     writer.commit.side_effect = SequenceConflict(0)
     author = JournalAuthor(session, agent, key, writer, store, vault, cipher, clock)
     with pytest.raises(SequenceConflict):
-        await author.record(JournalEntryType.offer_sent, b"one", b"c")
+        await author.record(JournalEntryType.decided, b"one", b"c")
     assert writer.commit.await_count == 4
 
 
@@ -122,6 +122,6 @@ async def test_key_failure_does_not_publish_journal_entry(journal_parts) -> None
     session, _, _, store, vault, _, _, author = journal_parts
     await vault.put(session, 0, b"reserved-key")
     with pytest.raises(SequenceConflict):
-        await author.record(JournalEntryType.offer_sent, b"must-not-be-published", b"c")
+        await author.record(JournalEntryType.decided, b"must-not-be-published", b"c")
     assert await store.read(session) == []
     assert await vault.entry_key(session, 0) == b"reserved-key"

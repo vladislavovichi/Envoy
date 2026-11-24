@@ -1,0 +1,20 @@
+# serializer version: 1
+# name: test_meeting_mandate_compiles_to_expected_shape
+  dict({
+    'feasible': 24,
+    'ids': tuple(
+      'time',
+      'place',
+    ),
+    'shape': tuple(
+      8,
+      4,
+    ),
+    'utility_row0': list([
+      1.0,
+      0.870767,
+      0.741533,
+      0.6123,
+    ]),
+  })
+# ---

@@ -73,7 +73,9 @@ async def test_sender_called_once_per_message(sender) -> None:
     queue = queue_for(sender)
     await queue.submit(1, "hi")
     await queue.close()
-    sender.send_message.assert_awaited_once_with(1, "hi", reply_markup=None)
+    sender.send_message.assert_awaited_once_with(
+        1, "hi", reply_markup=None, business_connection_id=None, thread_id=None
+    )
     with pytest.raises(RuntimeError, match="closed"):
         await queue.submit(1, "late")
 

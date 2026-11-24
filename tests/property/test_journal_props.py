@@ -18,7 +18,7 @@ async def test_any_single_byte_mutation_of_any_entry_is_detected(
 ) -> None:
     session, agent, key, store, _, _, _, author = journal_parts
     for payload in payloads:
-        await author.record(JournalEntryType.offer_sent, payload, b"commitment")
+        await author.record(JournalEntryType.decided, payload, b"commitment")
     entries = await store.read(session)
     target = index % len(entries)
     changed = bytearray(getattr(entries[target], field))

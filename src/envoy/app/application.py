@@ -1,6 +1,8 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from envoy.app.pipeline import Pipeline
+from envoy.app.runtime import Runtime
 from envoy.crypto.aead import ContentCipher
 from envoy.crypto.keys import PublicKey
 from envoy.domain.events import JournalEntryType
@@ -21,6 +23,8 @@ class Application:
     verifier: JournalVerifier
     sender: MessageSender
     updates: UpdateSource
+    pipeline: Pipeline
+    runtime: Runtime
     _author: Callable[[SessionId], JournalAuthor]
     _close: Callable[[], Awaitable[None]]
 

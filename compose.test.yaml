@@ -52,5 +52,5 @@ services:
       - -ec
       - >-
         black --check . && ruff check && mypy && lint-imports && pytest
-        && coverage report --include='*/envoy/journal/*,*/envoy/crypto/*' --fail-under=90
+        && coverage report --include='*/envoy/journal/*,*/envoy/crypto/*,*/envoy/engine/*' --fail-under=90
         && coverage json -o .coverage.json && python scripts/check_coverage.py .coverage.json

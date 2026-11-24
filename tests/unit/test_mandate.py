@@ -12,7 +12,10 @@ from envoy.ports.rng import SeededRng
 def meeting_data() -> dict:
     return {
         "template": "meeting",
-        "issues": [{"id": "time", "kind": "datetime"}, {"id": "place", "kind": "place"}],
+        "issues": [
+            {"id": "time", "kind": "datetime", "choices": ["2026-11-16T12:00:00+00:00"]},
+            {"id": "place", "kind": "place", "choices": ["office", "cafe"]},
+        ],
         "utility": {
             "weights": {"time": 0.5, "place": 0.5},
             "value_functions": {
@@ -22,9 +25,9 @@ def meeting_data() -> dict:
         },
         "hard_constraints": [{"kind": "cmp", "issue": "place", "op": "in", "value": ["office"]}],
         "reservation": {"minimum_utility": 0.4},
-        "strategy": {"kind": "boulware", "params": {}},
+        "strategy": {"kind": "time_dependent", "params": {"beta": 0.5}},
         "limits": {"max_rounds": 10},
-        "escalation": {"always": ["deposit"]},
+        "escalation": {"always": ["accept_deal"]},
     }
 
 
@@ -108,11 +111,7 @@ def test_constraint_values_cannot_mutate_signed_mandate(meeting_data: dict) -> N
     assert verify_reveal(commitment.digest, mandate, commitment.salt)
 
 
-@pytest.mark.parametrize("where", ["issue", "deadline"])
-def test_naive_datetime_rejected_before_commitment(meeting_data, where) -> None:
-    if where == "issue":
-        meeting_data["issues"][0]["minimum"] = "2026-11-16T12:00:00"
-    else:
-        meeting_data["limits"]["deadline"] = "2026-11-16T12:00:00"
+def test_naive_datetime_rejected_before_commitment(meeting_data) -> None:
+    meeting_data["issues"][0]["choices"] = ["2026-11-16T12:00:00"]
     with pytest.raises(ValidationError):
         Mandate.model_validate(meeting_data)

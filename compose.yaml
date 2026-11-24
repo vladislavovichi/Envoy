@@ -29,5 +29,18 @@ services:
         condition: service_healthy
     command: [alembic, upgrade, head]
     restart: 'no'
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: runtime
+    env_file:
+      - path: .env
+        required: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: [python, -m, envoy]
+    restart: unless-stopped
 volumes:
   postgres-data:

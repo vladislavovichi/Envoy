@@ -11,6 +11,11 @@ from envoy.journal.memory import InMemoryJournalStore, InMemoryKeyVault
 from envoy.ports.clock import FixedClock
 from envoy.ports.rng import SeededRng
 
+ALL_TABLES = (
+    "journal_entries, entry_keys, mandates, sessions, business_connections, business_chats, "
+    "processed_updates, scheduled_jobs, llm_usage"
+)
+
 
 @pytest.fixture
 async def aiohttp_server():
@@ -101,10 +106,10 @@ async def pg_session_factory(pg_engine):
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
     async with pg_engine.begin() as connection:
-        await connection.execute(text("TRUNCATE journal_entries, entry_keys"))
+        await connection.execute(text(f"TRUNCATE {ALL_TABLES}"))
     yield async_sessionmaker(pg_engine, expire_on_commit=False)
     async with pg_engine.begin() as connection:
-        await connection.execute(text("TRUNCATE journal_entries, entry_keys"))
+        await connection.execute(text(f"TRUNCATE {ALL_TABLES}"))
 
 
 @pytest.fixture

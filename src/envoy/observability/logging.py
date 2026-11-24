@@ -1,10 +1,10 @@
-import re
 from collections.abc import Mapping, MutableMapping
 from typing import Any
 
 import structlog
 from pydantic import SecretStr
-from stdnum import luhn
+
+from envoy.security.payment import CARD_LABEL, TON_LABEL, payment_spans
 
 PRIVATE_FIELDS = frozenset(
     {
@@ -24,38 +24,20 @@ PRIVATE_FIELDS = frozenset(
         "postgres_user",
         "password",
         "secret_token",
+        "anthropic_api_key",
+        "api_key",
     }
 )
-CARD_PATTERN = re.compile(r"\d(?:[\d -]*\d)?")
+LOG_LABELS = {CARD_LABEL: "[card]", TON_LABEL: "[ton]"}
 
 
 def mask_cards(value: str) -> str:
-    def replace(match: re.Match[str]) -> str:
-        text = match.group()
-        groups = list(re.finditer(r"\d+", text))
-        spans: list[tuple[int, int]] = []
-        for index, first in enumerate(groups):
-            digits = ""
-            for last in groups[index:]:
-                digits += last.group()
-                if len(digits) > 19:
-                    break
-                if len(digits) >= 13 and luhn.is_valid(digits):
-                    spans.append((first.start(), last.end()))
-        merged: list[tuple[int, int]] = []
-        for start, end in spans:
-            if merged and start <= merged[-1][1]:
-                merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
-            else:
-                merged.append((start, end))
-        pieces = []
-        offset = 0
-        for start, end in merged:
-            pieces.extend([text[offset:start], "[card]"])
-            offset = end
-        return "".join(pieces) + text[offset:]
-
-    return CARD_PATTERN.sub(replace, value)
+    pieces: list[str] = []
+    offset = 0
+    for start, end, label in payment_spans(value):
+        pieces.extend([value[offset:start], LOG_LABELS[label]])
+        offset = end
+    return "".join(pieces) + value[offset:]
 
 
 def redact(value: Any, private_fields: frozenset[str]) -> Any:

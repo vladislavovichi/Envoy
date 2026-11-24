@@ -1,0 +1,38 @@
+# serializer version: 1
+# name: test_transition_table_snapshot
+  dict({
+    'AGREED': list([
+      'checklist_opened',
+      'closed',
+      'delivered',
+      'escalated',
+    ]),
+    'CLOSED': list([
+    ]),
+    'EXECUTING': list([
+      'closed',
+      'commitment_done',
+      'delivered',
+      'escalated',
+    ]),
+    'INIT': list([
+      'closed',
+      'session_opened',
+    ]),
+    'NEGOTIATING': list([
+      'closed',
+      'decided',
+      'delivered',
+      'disclosed',
+      'escalated',
+      'intent_parsed',
+      'mandate_attested',
+    ]),
+    'PENDING_OWNER': list([
+      'closed',
+      'delivered',
+      'escalated',
+      'owner_resolved',
+    ]),
+  })
+# ---

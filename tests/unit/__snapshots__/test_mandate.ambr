@@ -65,7 +65,18 @@
       'DatetimeIssue': dict({
         'additionalProperties': False,
         'properties': dict({
+          'choices': dict({
+            'items': dict({
+              'format': 'date-time',
+              'type': 'string',
+            }),
+            'minItems': 1,
+            'title': 'Choices',
+            'type': 'array',
+          }),
           'id': dict({
+            'maxLength': 64,
+            'minLength': 1,
             'title': 'Id',
             'type': 'string',
           }),
@@ -74,36 +85,11 @@
             'title': 'Kind',
             'type': 'string',
           }),
-          'maximum': dict({
-            'anyOf': list([
-              dict({
-                'format': 'date-time',
-                'type': 'string',
-              }),
-              dict({
-                'type': 'null',
-              }),
-            ]),
-            'default': None,
-            'title': 'Maximum',
-          }),
-          'minimum': dict({
-            'anyOf': list([
-              dict({
-                'format': 'date-time',
-                'type': 'string',
-              }),
-              dict({
-                'type': 'null',
-              }),
-            ]),
-            'default': None,
-            'title': 'Minimum',
-          }),
         }),
         'required': list([
           'id',
           'kind',
+          'choices',
         ]),
         'title': 'DatetimeIssue',
         'type': 'object',
@@ -112,6 +98,8 @@
         'additionalProperties': False,
         'properties': dict({
           'id': dict({
+            'maxLength': 64,
+            'minLength': 1,
             'title': 'Id',
             'type': 'string',
           }),
@@ -121,34 +109,26 @@
             'type': 'string',
           }),
           'maximum': dict({
-            'anyOf': list([
-              dict({
-                'format': 'duration',
-                'type': 'string',
-              }),
-              dict({
-                'type': 'null',
-              }),
-            ]),
-            'default': None,
+            'format': 'duration',
             'title': 'Maximum',
+            'type': 'string',
           }),
           'minimum': dict({
-            'anyOf': list([
-              dict({
-                'format': 'duration',
-                'type': 'string',
-              }),
-              dict({
-                'type': 'null',
-              }),
-            ]),
-            'default': None,
+            'format': 'duration',
             'title': 'Minimum',
+            'type': 'string',
+          }),
+          'step': dict({
+            'format': 'duration',
+            'title': 'Step',
+            'type': 'string',
           }),
         }),
         'required': list([
           'id',
+          'minimum',
+          'maximum',
+          'step',
           'kind',
         ]),
         'title': 'DurationIssue',
@@ -161,10 +141,13 @@
             'items': dict({
               'type': 'string',
             }),
+            'minItems': 1,
             'title': 'Choices',
             'type': 'array',
           }),
           'id': dict({
+            'maxLength': 64,
+            'minLength': 1,
             'title': 'Id',
             'type': 'string',
           }),
@@ -176,8 +159,8 @@
         }),
         'required': list([
           'id',
-          'kind',
           'choices',
+          'kind',
         ]),
         'title': 'EnumIssue',
         'type': 'object',
@@ -189,10 +172,18 @@
             'default': list([
             ]),
             'items': dict({
+              'const': 'accept_deal',
               'type': 'string',
             }),
             'title': 'Always',
             'type': 'array',
+            'uniqueItems': True,
+          }),
+          'timeout': dict({
+            'default': 'PT1H',
+            'format': 'duration',
+            'title': 'Timeout',
+            'type': 'string',
           }),
         }),
         'title': 'Escalation',
@@ -202,6 +193,8 @@
         'additionalProperties': False,
         'properties': dict({
           'id': dict({
+            'maxLength': 64,
+            'minLength': 1,
             'title': 'Id',
             'type': 'string',
           }),
@@ -211,32 +204,23 @@
             'type': 'string',
           }),
           'maximum': dict({
-            'anyOf': list([
-              dict({
-                'type': 'integer',
-              }),
-              dict({
-                'type': 'null',
-              }),
-            ]),
-            'default': None,
             'title': 'Maximum',
+            'type': 'integer',
           }),
           'minimum': dict({
-            'anyOf': list([
-              dict({
-                'type': 'integer',
-              }),
-              dict({
-                'type': 'null',
-              }),
-            ]),
-            'default': None,
             'title': 'Minimum',
+            'type': 'integer',
+          }),
+          'step': dict({
+            'default': 1,
+            'title': 'Step',
+            'type': 'integer',
           }),
         }),
         'required': list([
           'id',
+          'minimum',
+          'maximum',
           'kind',
         ]),
         'title': 'IntegerIssue',
@@ -280,36 +264,31 @@
       'Limits': dict({
         'additionalProperties': False,
         'properties': dict({
-          'allow': dict({
-            'default': list([
-            ]),
-            'items': dict({
-              'type': 'string',
-            }),
-            'title': 'Allow',
-            'type': 'array',
-          }),
-          'deadline': dict({
+          'counterparts_allow': dict({
             'anyOf': list([
               dict({
-                'format': 'date-time',
-                'type': 'string',
+                'items': dict({
+                  'type': 'integer',
+                }),
+                'type': 'array',
+                'uniqueItems': True,
               }),
               dict({
                 'type': 'null',
               }),
             ]),
             'default': None,
-            'title': 'Deadline',
+            'title': 'Counterparts Allow',
           }),
-          'deny': dict({
+          'counterparts_deny': dict({
             'default': list([
             ]),
             'items': dict({
-              'type': 'string',
+              'type': 'integer',
             }),
-            'title': 'Deny',
+            'title': 'Counterparts Deny',
             'type': 'array',
+            'uniqueItems': True,
           }),
           'max_deals_per_day': dict({
             'default': 1,
@@ -328,6 +307,12 @@
             'title': 'Max Rounds',
             'type': 'integer',
           }),
+          'session_deadline': dict({
+            'default': 'P2D',
+            'format': 'duration',
+            'title': 'Session Deadline',
+            'type': 'string',
+          }),
         }),
         'required': list([
           'max_rounds',
@@ -344,6 +329,8 @@
             'type': 'string',
           }),
           'id': dict({
+            'maxLength': 64,
+            'minLength': 1,
             'title': 'Id',
             'type': 'string',
           }),
@@ -360,11 +347,7 @@
               dict({
                 'type': 'string',
               }),
-              dict({
-                'type': 'null',
-              }),
             ]),
-            'default': None,
             'title': 'Maximum',
           }),
           'minimum': dict({
@@ -375,16 +358,26 @@
               dict({
                 'type': 'string',
               }),
+            ]),
+            'title': 'Minimum',
+          }),
+          'step': dict({
+            'anyOf': list([
               dict({
-                'type': 'null',
+                'type': 'number',
+              }),
+              dict({
+                'type': 'string',
               }),
             ]),
-            'default': None,
-            'title': 'Minimum',
+            'title': 'Step',
           }),
         }),
         'required': list([
           'id',
+          'minimum',
+          'maximum',
+          'step',
           'kind',
         ]),
         'title': 'MoneyIssue',
@@ -465,15 +458,16 @@
         'additionalProperties': False,
         'properties': dict({
           'choices': dict({
-            'default': list([
-            ]),
             'items': dict({
               'type': 'string',
             }),
+            'minItems': 1,
             'title': 'Choices',
             'type': 'array',
           }),
           'id': dict({
+            'maxLength': 64,
+            'minLength': 1,
             'title': 'Id',
             'type': 'string',
           }),
@@ -485,6 +479,7 @@
         }),
         'required': list([
           'id',
+          'choices',
           'kind',
         ]),
         'title': 'PlaceIssue',
@@ -571,33 +566,19 @@
         'additionalProperties': False,
         'properties': dict({
           'kind': dict({
+            'const': 'time_dependent',
+            'default': 'time_dependent',
             'title': 'Kind',
             'type': 'string',
           }),
           'params': dict({
             'additionalProperties': dict({
-              'anyOf': list([
-                dict({
-                  'type': 'number',
-                }),
-                dict({
-                  'type': 'integer',
-                }),
-                dict({
-                  'type': 'string',
-                }),
-                dict({
-                  'type': 'boolean',
-                }),
-              ]),
+              'type': 'number',
             }),
             'title': 'Params',
             'type': 'object',
           }),
         }),
-        'required': list([
-          'kind',
-        ]),
         'title': 'StrategySpec',
         'type': 'object',
       }),

@@ -38,6 +38,8 @@ def bounded_retry_wait(state: RetryCallState, maximum: float) -> float:
 class PendingMessage:
     text: str
     reply_markup: ReplyMarkup | None
+    business_connection_id: str | None
+    thread_id: int | None
     result: asyncio.Future[SentMessage]
 
 
@@ -69,13 +71,21 @@ class OutboundQueue:
         self._closed = asyncio.Event()
 
     async def submit(
-        self, chat_id: int, text: str, *, reply_markup: ReplyMarkup | None = None
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        reply_markup: ReplyMarkup | None = None,
+        business_connection_id: str | None = None,
+        thread_id: int | None = None,
     ) -> SentMessage:
         if self._closing:
             raise RuntimeError("Outbound queue is closed")
         result: asyncio.Future[SentMessage] = asyncio.get_running_loop().create_future()
         queue = self._queues.setdefault(chat_id, asyncio.Queue())
-        queue.put_nowait(PendingMessage(text, reply_markup, result))
+        queue.put_nowait(
+            PendingMessage(text, reply_markup, business_connection_id, thread_id, result)
+        )
         worker = self._workers.get(chat_id)
         if worker is None or worker.done():
             self._workers[chat_id] = asyncio.create_task(self._drain(chat_id, queue))
@@ -113,7 +123,11 @@ class OutboundQueue:
                     with attempt:
                         await self._admit(limiter)
                         message = await self._sender.send_message(
-                            chat_id, pending.text, reply_markup=pending.reply_markup
+                            chat_id,
+                            pending.text,
+                            reply_markup=pending.reply_markup,
+                            business_connection_id=pending.business_connection_id,
+                            thread_id=pending.thread_id,
                         )
                         if not pending.result.done():
                             pending.result.set_result(message)

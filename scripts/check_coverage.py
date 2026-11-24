@@ -4,7 +4,7 @@ from pathlib import Path
 
 report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 failed = []
-for package in ("journal", "crypto"):
+for package in ("journal", "crypto", "engine"):
     summaries = [
         data["summary"]
         for path, data in report["files"].items()
