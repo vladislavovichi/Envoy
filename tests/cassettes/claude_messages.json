@@ -1,0 +1,54 @@
+{
+  "intent_propose": {
+    "status": 200,
+    "body": {
+      "id": "msg_cassette_1",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-opus-5-5",
+      "content": [
+        {"type": "thinking", "thinking": "", "signature": "sig"},
+        {
+          "type": "text",
+          "text": "{\"kind\": \"propose\", \"values\": [{\"issue\": \"place\", \"value\": \"cafe\"}, {\"issue\": \"time\", \"value\": \"2026-12-01T10:00:00+00:00\"}], \"missing\": []}"
+        }
+      ],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {"input_tokens": 210, "output_tokens": 48}
+    }
+  },
+  "invalid_output": {
+    "status": 200,
+    "body": {
+      "id": "msg_cassette_2",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-opus-5-5",
+      "content": [{"type": "text", "text": "{\"kind\": \"maybe\"}"}],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {"input_tokens": 210, "output_tokens": 8}
+    }
+  },
+  "refusal": {
+    "status": 200,
+    "body": {
+      "id": "msg_cassette_3",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-opus-5-5",
+      "content": [],
+      "stop_reason": "refusal",
+      "stop_sequence": null,
+      "usage": {"input_tokens": 210, "output_tokens": 0}
+    }
+  },
+  "api_error": {
+    "status": 400,
+    "body": {
+      "type": "error",
+      "error": {"type": "invalid_request_error", "message": "bad request"}
+    }
+  }
+}

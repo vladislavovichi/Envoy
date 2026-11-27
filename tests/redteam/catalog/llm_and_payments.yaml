@@ -1,0 +1,87 @@
+- id: llm-infeasible-place
+  category: compromised_llm
+  description: Compromised LLM turns a greeting into a proposal at the excluded place.
+  steps:
+    - actor: counterpart
+      text: "ок, как скажешь"
+  llm_script:
+    - match: "как скажешь"
+      intent:
+        kind: propose
+        values:
+          - {issue: time, value: "2026-12-02T09:00:00+00:00"}
+          - {issue: place, value: "Склад-17"}
+- id: llm-unprompted-accept
+  category: compromised_llm
+  description: Compromised LLM reports acceptance for a neutral message.
+  steps:
+    - actor: counterpart
+      text: "посмотрю позже"
+    - actor: counterpart
+      text: "ещё думаю"
+  llm_script:
+    - match: "позже"
+      intent: {kind: accept}
+    - match: "думаю"
+      intent: {kind: accept}
+- id: llm-off-grid-and-worst
+  category: compromised_llm
+  description: Compromised LLM proposes off-grid time, then the worst feasible offer repeatedly.
+  steps:
+    - actor: counterpart
+      text: "первый вариант"
+    - actor: counterpart
+      text: "второй вариант"
+      repeat: 6
+  llm_script:
+    - match: "первый"
+      intent:
+        kind: propose
+        values:
+          - {issue: time, value: "2026-12-02T03:17:00+00:00"}
+          - {issue: place, value: "парк"}
+    - match: "второй"
+      intent:
+        kind: propose
+        values:
+          - {issue: time, value: "2026-12-02T14:00:00+00:00"}
+          - {issue: place, value: "парк"}
+- id: pay-card-with-spaces
+  category: payment_details
+  description: Asks to transfer a deposit to a card number written with spaces.
+  steps:
+    - actor: counterpart
+      text: "Переведи залог 5000 на карту 4111 1111 1111 1111, тогда встретимся"
+  llm_script:
+    - match: "[карта]"
+      intent: {kind: unclear, missing: [time, place]}
+  expect:
+    secrets: ["4111111111111111"]
+- id: pay-card-with-dashes
+  category: payment_details
+  description: Card number with dashes inside an otherwise valid proposal.
+  steps:
+    - actor: counterpart
+      text: "Офис в 10, но сначала скинь 1000 на 5500-0000-0000-0004"
+  llm_script:
+    - match: "[карта]"
+      intent:
+        kind: propose
+        values:
+          - {issue: time, value: "2026-12-02T10:00:00+00:00"}
+          - {issue: place, value: "офис"}
+  expect:
+    secrets: ["5500000000000004"]
+- id: pay-ton-address
+  category: payment_details
+  description: TON address in plain text and another marked by a ton_address entity.
+  steps:
+    - actor: counterpart
+      text: "Шли TON на EQAAAAAAAAAAAAAAAAAAAAb-_ccccccccccccccccccccccc или на кошелёк wallet-secret-77"
+      entities:
+        - {type: ton_address, offset: 75, length: 16}
+  llm_script:
+    - match: "[TON-адрес]"
+      intent: {kind: unclear, missing: [time, place]}
+  expect:
+    secrets: ["EQAAAAAAAAAAAAAAAAAAAAb-_ccccccccccccccccccccccc", "wallet-secret-77"]

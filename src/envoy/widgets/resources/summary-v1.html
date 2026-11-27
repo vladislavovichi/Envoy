@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{color-scheme:light dark}
+body{margin:0;padding:10px 12px;font:var(--tg-text-font-size,14px)/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--tg-theme-text-color,#000);background:var(--tg-theme-bg-color,#fff);overflow-wrap:anywhere}
+h1{font-size:1em;margin:0 0 6px}
+.r{display:flex;gap:6px;align-items:stretch;border-top:1px solid var(--tg-theme-section-separator-color,#e7e7ea);padding:4px 0}
+.o{flex:1;text-align:left;border:0;background:none;padding:4px 0;font:inherit;color:inherit}
+.o:enabled{cursor:pointer}
+.o b{display:block;font-weight:500}
+.o span{font-size:.86em;color:var(--tg-theme-hint-color,#707579)}
+.o:enabled b{color:var(--tg-theme-link-color,#3390ec)}
+.l{border:0;border-radius:8px;padding:0 10px;font:inherit;font-size:.8em;color:var(--tg-theme-button-text-color,#fff);background:var(--tg-theme-button-color,#3390ec)}
+button:disabled{opacity:var(--tg-button-disabled-opacity,.5)}
+.m{margin-top:6px;min-height:1.35em;font-size:.9em;color:var(--tg-theme-hint-color,#707579)}
+</style>
+</head>
+<body>
+<h1 id="title">Сводка Envoy</h1>
+<div id="rows"></div>
+<div class="m" id="msg"></div>
+<script>
+(function(){
+var W=window.TelegramWidget,R=-1,D=null,busy=false;
+var S={counterpart:"ждёт ответа собеседника",owner:"ждёт вашего решения",agreed:"согласовано",fulfilled:"встреча состоялась",rejected:"закрыто без сделки",expired:"закрыто по сроку"};
+var A={ok:"Ссылка отправлена в чат",stale:"Сводка устарела",no:"Ссылка недоступна",error:"Не удалось, попробуйте ещё раз"};
+function $(i){return document.getElementById(i)}
+function msg(x){$("msg").textContent=x||""}
+function ask(i){
+if(busy||!D)return;busy=true;msg("Запрашиваю ссылку…");
+try{W.request("l:"+D.r+":"+i).then(function(a){busy=false;msg(A[a&&a.result]||"")},function(e){busy=false;msg(e&&e.code==="BUSY"?"Подождите":"Не удалось отправить запрос")})}
+catch(e){busy=false;msg("Не удалось отправить запрос")}}
+function row(x,i,direct){
+var r=document.createElement("div"),o=document.createElement("button"),b=document.createElement("b"),s=document.createElement("span");
+r.className="r";o.className="o";o.type="button";
+b.textContent=String(x.label);s.textContent=S[x.status]||String(x.status);
+o.appendChild(b);o.appendChild(s);r.appendChild(o);
+if(!x.url){o.disabled=true;return r}
+if(direct){
+o.onclick=function(){try{W.openTelegramLink(String(x.url))}catch(e){msg("Не удалось открыть, нажмите «Прислать ссылку»")}};
+var l=document.createElement("button");l.className="l";l.type="button";l.textContent="Прислать ссылку";
+l.onclick=function(){ask(i)};r.appendChild(l)}
+else o.onclick=function(){ask(i)};
+return r}
+function draw(){
+var d;try{d=JSON.parse(W.chatData||"null")}catch(e){return}
+if(!d||typeof d.r!=="number"||d.r<R)return;R=d.r;D=d;
+var list=d.rows||[],box=$("rows");box.textContent="";
+$("title").textContent="Сводка Envoy · активных: "+(typeof d.total==="number"?d.total:list.length);
+list.forEach(function(x,i){box.appendChild(row(x,i,d.links==="direct"))});
+}
+W.onEvent("chatDataChanged",draw);draw();if(W.ready)W.ready();
+})();
+</script>
+</body>
+</html>

@@ -12,10 +12,18 @@ class MandateCommitment:
     digest: bytes
 
 
+def commitment_digest(mandate: Mandate, salt: bytes) -> bytes:
+    return sha256(salt + mandate.canonical_bytes()).digest()
+
+
 def commit(mandate: Mandate, rng: Rng) -> MandateCommitment:
     salt = rng.token_bytes(32)
-    return MandateCommitment(salt, sha256(salt + mandate.canonical_bytes()).digest())
+    return MandateCommitment(salt, commitment_digest(mandate, salt))
 
 
-def verify_reveal(commitment_digest: bytes, mandate: Mandate, salt: bytes) -> bool:
-    return compare_digest(commitment_digest, sha256(salt + mandate.canonical_bytes()).digest())
+def verify_reveal(digest: bytes, mandate: Mandate, salt: bytes) -> bool:
+    return compare_digest(digest, commitment_digest(mandate, salt))
+
+
+def attestation_bytes(mandate: Mandate) -> bytes:
+    return mandate.canonical_bytes() + mandate.version.to_bytes(4, "big")

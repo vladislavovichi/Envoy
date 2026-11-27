@@ -71,7 +71,7 @@ jobs:
 
       - name: Check journal and crypto coverage
         run: |
-          poetry run coverage report --include='*/envoy/journal/*,*/envoy/crypto/*' --fail-under=90
+          poetry run coverage report --include='*/envoy/journal/*,*/envoy/crypto/*,*/envoy/engine/*' --fail-under=90
           poetry run coverage json -o .coverage.json
           poetry run python scripts/check_coverage.py .coverage.json
 

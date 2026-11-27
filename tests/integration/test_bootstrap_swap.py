@@ -8,6 +8,7 @@ from envoy.domain.events import JournalEntryType
 from envoy.domain.ids import SessionId
 from envoy.domain.telegram import SentMessage
 from envoy.ports.registry import UnknownImplementation
+from envoy.telegram.memory import FakeTransport
 from envoy.telegram.ports import MessageSender
 
 
@@ -66,9 +67,12 @@ async def test_composition_root_wires_ports_with_autospec_mocks(mocker) -> None:
 
     source = mocker.create_autospec(UpdateSource, instance=True)
     registries.sources.register("custom", lambda **kwargs: source)
+    registries.surfaces.register("custom", lambda sender: FakeTransport())
     app = build_application(settings(telegram_transport="custom"), registries=registries)
     try:
         assert (await app.sender.send_message(42, "hello")).message_id == 1
-        sender.send_message.assert_awaited_once_with(42, "hello", reply_markup=None)
+        sender.send_message.assert_awaited_once_with(
+            42, "hello", reply_markup=None, business_connection_id=None, thread_id=None
+        )
     finally:
         await app.close()

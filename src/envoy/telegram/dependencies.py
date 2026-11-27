@@ -19,11 +19,15 @@ REGISTRY = (
     TelegramDependency("sendMessage", "1.0", "outbound"),
     TelegramDependency("getUpdates", "1.0", "adapter"),
     TelegramDependency("setWebhook", "1.0", "adapter"),
-    TelegramDependency("getMe", "1.0", "transport contracts"),
+    TelegramDependency("getMe", "1.0", "adapter bot username for topic links"),
     TelegramDependency("sendChecklist", "9.1", "phase 1 execution"),
+    TelegramDependency("answerCallbackQuery", "1.0", "phase 1 escalation callbacks"),
     TelegramDependency("answerGuestQuery", "10.0", "phase 2 guest surface"),
     TelegramDependency("refundStarPayment", "7.4", "phase 3 payments"),
-    TelegramDependency("createForumTopic", "6.3", "phase 1 session surface"),
+    TelegramDependency("createForumTopic", "9.4", "phase 1 session topics in private chat"),
+    TelegramDependency("sendWidget", "10.4", "phase 1b owner widgets"),
+    TelegramDependency("editMessageWidgetData", "10.4", "phase 1b owner widget state"),
+    TelegramDependency("answerWidgetQuery", "10.4", "phase 1b owner widget queries"),
 )
 
 

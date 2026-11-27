@@ -1,6 +1,9 @@
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime
 from math import isfinite
+from typing import Any, cast
 
 from aiolimiter import AsyncLimiter
 from tenacity import (
@@ -13,7 +16,7 @@ from tenacity import (
 
 from envoy.domain.telegram import ReplyMarkup, SentMessage
 from envoy.ports.clock import Clock
-from envoy.telegram.ports import MessageSender
+from envoy.telegram.ports import MessageSender, WidgetTransport
 
 
 class RetryAfter(Exception):
@@ -35,10 +38,9 @@ def bounded_retry_wait(state: RetryCallState, maximum: float) -> float:
 
 
 @dataclass(frozen=True)
-class PendingMessage:
-    text: str
-    reply_markup: ReplyMarkup | None
-    result: asyncio.Future[SentMessage]
+class PendingCall:
+    operation: Callable[[], Awaitable[Any]]
+    result: asyncio.Future[Any]
 
 
 class OutboundQueue:
@@ -63,23 +65,43 @@ class OutboundQueue:
         self._max_retry_after = max_retry_after
         self._clock = clock
         self._limiters: dict[int, AsyncLimiter] = {}
-        self._queues: dict[int, asyncio.Queue[PendingMessage]] = {}
+        self._queues: dict[int, asyncio.Queue[PendingCall]] = {}
         self._workers: dict[int, asyncio.Task[None]] = {}
         self._closing = False
         self._closed = asyncio.Event()
 
     async def submit(
-        self, chat_id: int, text: str, *, reply_markup: ReplyMarkup | None = None
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        reply_markup: ReplyMarkup | None = None,
+        business_connection_id: str | None = None,
+        thread_id: int | None = None,
     ) -> SentMessage:
+        sender = self._sender
+
+        async def send() -> SentMessage:
+            return await sender.send_message(
+                chat_id,
+                text,
+                reply_markup=reply_markup,
+                business_connection_id=business_connection_id,
+                thread_id=thread_id,
+            )
+
+        return await self.call(chat_id, send)
+
+    async def call[T](self, chat_id: int, operation: Callable[[], Awaitable[T]]) -> T:
         if self._closing:
             raise RuntimeError("Outbound queue is closed")
-        result: asyncio.Future[SentMessage] = asyncio.get_running_loop().create_future()
+        result: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
         queue = self._queues.setdefault(chat_id, asyncio.Queue())
-        queue.put_nowait(PendingMessage(text, reply_markup, result))
+        queue.put_nowait(PendingCall(operation, result))
         worker = self._workers.get(chat_id)
         if worker is None or worker.done():
             self._workers[chat_id] = asyncio.create_task(self._drain(chat_id, queue))
-        return await result
+        return cast(T, await result)
 
     def _wait(self, state: RetryCallState) -> float:
         return bounded_retry_wait(state, self._max_retry_after)
@@ -97,7 +119,7 @@ class OutboundQueue:
         await limiter.acquire()
         self._admission_changed.set()
 
-    async def _drain(self, chat_id: int, queue: asyncio.Queue[PendingMessage]) -> None:
+    async def _drain(self, chat_id: int, queue: asyncio.Queue[PendingCall]) -> None:
         limiter = self._limiters.setdefault(chat_id, AsyncLimiter(1, 1 / self._per_chat_rate))
         while not queue.empty():
             pending = queue.get_nowait()
@@ -112,11 +134,9 @@ class OutboundQueue:
                 ):
                     with attempt:
                         await self._admit(limiter)
-                        message = await self._sender.send_message(
-                            chat_id, pending.text, reply_markup=pending.reply_markup
-                        )
+                        outcome = await pending.operation()
                         if not pending.result.done():
-                            pending.result.set_result(message)
+                            pending.result.set_result(outcome)
             except Exception as exc:
                 if not pending.result.done():
                     pending.result.set_exception(exc)
@@ -130,3 +150,46 @@ class OutboundQueue:
         self._closing = True
         await asyncio.gather(*self._workers.values())
         self._closed.set()
+
+
+class QueuedWidgetTransport:
+    def __init__(self, transport: WidgetTransport, queue: OutboundQueue) -> None:
+        self._transport = transport
+        self._queue = queue
+
+    async def send_widget(
+        self,
+        chat_id: int,
+        html: str,
+        state: str,
+        caption: str,
+        *,
+        thread_id: int | None,
+        allow_queries: bool,
+        reply_markup: ReplyMarkup | None = None,
+    ) -> int:
+        transport = self._transport
+
+        async def send() -> int:
+            return await transport.send_widget(
+                chat_id,
+                html,
+                state,
+                caption,
+                thread_id=thread_id,
+                allow_queries=allow_queries,
+                reply_markup=reply_markup,
+            )
+
+        return await self._queue.call(chat_id, send)
+
+    async def edit_widget(self, chat_id: int, message_id: int, state: str) -> None:
+        transport = self._transport
+
+        async def edit() -> None:
+            await transport.edit_widget(chat_id, message_id, state)
+
+        await self._queue.call(chat_id, edit)
+
+    async def answer_widget(self, query_id: str, data: str, *, deadline: datetime) -> None:
+        await self._transport.answer_widget(query_id, data, deadline=deadline)

@@ -1,11 +1,15 @@
 COMPOSE = docker compose -f compose.yaml -f compose.dev.yaml
 TEST_COMPOSE = docker compose -f compose.yaml -f compose.test.yaml --profile test
 
-.PHONY: up down migrate test lint
+.PHONY: up down migrate test lint app
 
 up:
 	docker compose -f compose.yaml -f compose.dev.yaml up -d --wait postgres
 	$(COMPOSE) run --rm migrate
+	$(COMPOSE) up -d app
+
+app:
+	$(COMPOSE) up -d --build app
 
 down:
 	docker compose -f compose.yaml -f compose.dev.yaml -f compose.test.yaml --profile test down

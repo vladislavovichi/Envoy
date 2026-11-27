@@ -24,3 +24,14 @@ def normalize(value: Any) -> Any:
 
 def encode(value: Any) -> bytes:
     return bytes(cbor2.dumps(normalize(value), canonical=True))
+
+
+def _tag_hook(tag: cbor2.CBORTag, immutable: bool) -> Any:
+    if tag.tag == 1002:
+        days, seconds, microseconds = tag.value
+        return timedelta(days=days, seconds=seconds, microseconds=microseconds)
+    return tag
+
+
+def decode(data: bytes) -> Any:
+    return cbor2.loads(data, tag_hook=_tag_hook)

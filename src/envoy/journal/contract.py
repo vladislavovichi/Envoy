@@ -19,7 +19,7 @@ class JournalStoreContract:
 
         entries: list[JournalEntry] = []
         for _ in range(3):
-            entry = await author.record(JournalEntryType.offer_sent, b"data", b"commitment")
+            entry = await author.record(JournalEntryType.decided, b"data", b"commitment")
             await store.append(entry)
             entries.append(entry)
         assert await store.read(entries[0].session_id) == entries
@@ -29,7 +29,7 @@ class JournalStoreContract:
     ) -> None:
         from envoy.domain.events import JournalEntryType
 
-        entry = await journal_parts[-1].record(JournalEntryType.offer_sent, b"data", b"c")
+        entry = await journal_parts[-1].record(JournalEntryType.decided, b"data", b"c")
         await store.append(entry)
         try:
             await store.append(entry)
@@ -45,7 +45,7 @@ class JournalStoreContract:
 
         entries = []
         for _ in range(3):
-            entry = await journal_parts[-1].record(JournalEntryType.offer_sent, b"data", b"c")
+            entry = await journal_parts[-1].record(JournalEntryType.decided, b"data", b"c")
             await store.append(entry)
             entries.append(entry)
         assert await store.read(entries[0].session_id, start=1) == entries[1:]

@@ -1,0 +1,73 @@
+{
+  "source": "https://core.telegram.org/bots/api#sendwidget",
+  "guide": "https://core.telegram.org/bots/widgets#limits",
+  "checked_at": "2026-11-27",
+  "api_version": "10.4",
+  "methods": {
+    "sendWidget": {
+      "since": "10.4",
+      "required": ["chat_id", "html"],
+      "optional": [
+        "message_thread_id",
+        "width",
+        "height",
+        "public_data",
+        "chat_data",
+        "caption",
+        "parse_mode",
+        "caption_entities",
+        "show_caption_above_media",
+        "allow_queries",
+        "is_shared",
+        "disable_notification",
+        "protect_content",
+        "allow_paid_broadcast",
+        "message_effect_id",
+        "reply_parameters",
+        "reply_markup"
+      ],
+      "returns": "Message"
+    },
+    "editMessageWidgetData": {
+      "since": "10.4",
+      "required": [],
+      "optional": ["chat_id", "message_id", "inline_message_id", "public_data", "chat_data"],
+      "returns": "True"
+    },
+    "answerWidgetQuery": {
+      "since": "10.4",
+      "required": ["widget_query_id"],
+      "optional": ["data"],
+      "returns": "True"
+    }
+  },
+  "types": {
+    "Update": {"fields": ["widget_query"]},
+    "WidgetQuery": {
+      "required": ["id", "from", "chat_instance", "type", "data"],
+      "optional": ["chat", "message_id", "inline_message_id", "chat_type", "widget_id"]
+    },
+    "WidgetQueryTypeData": {"required": ["type"], "optional": ["wallet_card"], "type": "data"}
+  },
+  "limits": {
+    "html_bytes": 32768,
+    "html_compressed_bytes": 4096,
+    "data_bytes": 1024,
+    "caption_chars": 1024,
+    "request_bytes": [1, 64],
+    "answer_bytes": 1024,
+    "answer_seconds": 15,
+    "queries_per_window": 5,
+    "query_window_seconds": 5
+  },
+  "errors": {
+    "html_too_large": "INPUT_MEDIA_WIDGET_TOO_LARGE",
+    "html_invalid": "INPUT_MEDIA_WIDGET_HTML_INVALID",
+    "send_data_too_large": "INPUT_MEDIA_WIDGET_DATA_TOO_LARGE",
+    "send_data_invalid": "INPUT_MEDIA_WIDGET_DATA_INVALID",
+    "edit_data_too_large": "WIDGET_DATA_TOO_LARGE",
+    "edit_data_invalid": "WIDGET_DATA_INVALID",
+    "answer_too_large": "WIDGET_RESULT_TOO_LARGE",
+    "not_modified": "message is not modified"
+  }
+}

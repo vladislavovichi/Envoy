@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from math import isfinite
 from types import MappingProxyType
@@ -11,57 +11,156 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
+    TypeAdapter,
     field_serializer,
     field_validator,
     model_validator,
 )
 
 from envoy.domain.canonical import encode, normalize
+from envoy.domain.offer import IssueValue
+
+MAX_GRID_CELLS = 1_000_000
+_STR = TypeAdapter(str)
+_INT = TypeAdapter(int)
+_DECIMAL = TypeAdapter(Decimal)
+_TIMEDELTA = TypeAdapter(timedelta)
+_DATETIME = TypeAdapter(AwareDatetime)
 
 
 class FrozenModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
 
-class MoneyIssue(FrozenModel):
-    id: str
+class _IssueBase(FrozenModel):
+    id: str = Field(min_length=1, max_length=64)
+
+    def values(self) -> tuple[IssueValue, ...]:
+        raise NotImplementedError
+
+    def size(self) -> int:
+        return len(self.values())
+
+    def coerce(self, raw: Any) -> IssueValue:
+        raise NotImplementedError
+
+    def as_number(self, value: IssueValue) -> float:
+        raise NotImplementedError
+
+
+class _ChoiceIssue(_IssueBase):
+    choices: tuple[str, ...] = Field(min_length=1)
+
+    @field_validator("choices")
+    @classmethod
+    def unique_choices(cls, choices: tuple[str, ...]) -> tuple[str, ...]:
+        if len(set(choices)) != len(choices):
+            raise ValueError("Choices must be unique")
+        return choices
+
+    def values(self) -> tuple[IssueValue, ...]:
+        return self.choices
+
+    def size(self) -> int:
+        return len(self.choices)
+
+    def coerce(self, raw: Any) -> IssueValue:
+        return _STR.validate_python(raw)
+
+    def as_number(self, value: IssueValue) -> float:
+        if not isinstance(value, str):
+            raise ValueError("Choice value must be a string")
+        return float(self.choices.index(value))
+
+
+class _RangeIssue[N: (int, Decimal, timedelta)](_IssueBase):
+    minimum: N
+    maximum: N
+    step: N
+
+    @model_validator(mode="after")
+    def ordered_range(self) -> Self:
+        if self.step <= self.step * 0 or self.minimum > self.maximum:
+            raise ValueError("Range requires minimum <= maximum and a positive step")
+        return self
+
+    def size(self) -> int:
+        return int((self.maximum - self.minimum) // self.step) + 1
+
+    def values(self) -> tuple[IssueValue, ...]:
+        return tuple(self.minimum + self.step * index for index in range(self.size()))
+
+
+class MoneyIssue(_RangeIssue[Decimal]):
     kind: Literal["money"]
     currency: str = "RUB"
-    minimum: Decimal | None = None
-    maximum: Decimal | None = None
+
+    def coerce(self, raw: Any) -> IssueValue:
+        return _DECIMAL.validate_python(raw)
+
+    def as_number(self, value: IssueValue) -> float:
+        if not isinstance(value, (Decimal, int)) or isinstance(value, bool):
+            raise ValueError("Money value must be a decimal")
+        return float(value)
 
 
-class DatetimeIssue(FrozenModel):
-    id: str
-    kind: Literal["datetime"]
-    minimum: AwareDatetime | None = None
-    maximum: AwareDatetime | None = None
-
-
-class PlaceIssue(FrozenModel):
-    id: str
-    kind: Literal["place"]
-    choices: tuple[str, ...] = ()
-
-
-class EnumIssue(FrozenModel):
-    id: str
-    kind: Literal["enum"]
-    choices: tuple[str, ...]
-
-
-class IntegerIssue(FrozenModel):
-    id: str
+class IntegerIssue(_RangeIssue[int]):
     kind: Literal["integer"]
-    minimum: int | None = None
-    maximum: int | None = None
+    step: int = 1
+
+    def coerce(self, raw: Any) -> IssueValue:
+        return _INT.validate_python(raw)
+
+    def as_number(self, value: IssueValue) -> float:
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError("Integer value must be an int")
+        return float(value)
 
 
-class DurationIssue(FrozenModel):
-    id: str
+class DurationIssue(_RangeIssue[timedelta]):
     kind: Literal["duration"]
-    minimum: timedelta | None = None
-    maximum: timedelta | None = None
+
+    def coerce(self, raw: Any) -> IssueValue:
+        return _TIMEDELTA.validate_python(raw)
+
+    def as_number(self, value: IssueValue) -> float:
+        if not isinstance(value, timedelta):
+            raise ValueError("Duration value must be a timedelta")
+        return value.total_seconds()
+
+
+class DatetimeIssue(_IssueBase):
+    kind: Literal["datetime"]
+    choices: tuple[AwareDatetime, ...] = Field(min_length=1)
+
+    @field_validator("choices")
+    @classmethod
+    def unique_choices(cls, choices: tuple[datetime, ...]) -> tuple[datetime, ...]:
+        if len(set(choices)) != len(choices):
+            raise ValueError("Choices must be unique")
+        return choices
+
+    def values(self) -> tuple[IssueValue, ...]:
+        return self.choices
+
+    def size(self) -> int:
+        return len(self.choices)
+
+    def coerce(self, raw: Any) -> IssueValue:
+        return _DATETIME.validate_python(raw)
+
+    def as_number(self, value: IssueValue) -> float:
+        if not isinstance(value, datetime):
+            raise ValueError("Datetime value must be an aware datetime")
+        return value.timestamp()
+
+
+class PlaceIssue(_ChoiceIssue):
+    kind: Literal["place"]
+
+
+class EnumIssue(_ChoiceIssue):
+    kind: Literal["enum"]
 
 
 type Issue = Annotated[
@@ -165,36 +264,80 @@ def referenced_issues(predicate: Predicate) -> set[str]:
             return referenced_issues(predicate.condition) | referenced_issues(predicate.consequence)
 
 
+def check_constraint_values(predicate: Predicate, issues: Mapping[str, Issue]) -> None:
+    match predicate.kind:
+        case "cmp":
+            issue = issues[predicate.issue]
+            value = predicate.value
+            if predicate.op in ("<=", ">="):
+                issue.as_number(issue.coerce(value))
+                return
+            if not isinstance(value, (tuple, list)):
+                raise ValueError(f"Operator {predicate.op} expects a list")
+            if predicate.op == "between":
+                if len(value) != 2:
+                    raise ValueError("between expects exactly two bounds")
+                for bound in value:
+                    issue.as_number(issue.coerce(bound))
+            else:
+                for item in value:
+                    issue.coerce(item)
+        case "and" | "or":
+            for nested in predicate.predicates:
+                check_constraint_values(nested, issues)
+        case "not":
+            check_constraint_values(predicate.predicate, issues)
+        case "requires":
+            check_constraint_values(predicate.condition, issues)
+            check_constraint_values(predicate.consequence, issues)
+
+
 class Reservation(FrozenModel):
     minimum_utility: float = Field(ge=0, le=1)
     constraints: tuple[Predicate, ...] = ()
 
 
 class StrategySpec(FrozenModel):
-    kind: str
-    params: Mapping[str, float | int | str | bool] = Field(default_factory=dict)
+    kind: Literal["time_dependent"] = "time_dependent"
+    params: Mapping[str, float] = Field(default_factory=lambda: {"beta": 0.5})
 
     @field_validator("params")
     @classmethod
-    def freeze_params(cls, value: Mapping[str, Any]) -> Mapping[str, Any]:
+    def freeze_params(cls, value: Mapping[str, float]) -> Mapping[str, float]:
+        if any(not isfinite(item) for item in value.values()):
+            raise ValueError("Strategy parameters must be finite")
+        if value.get("beta", 1.0) <= 0:
+            raise ValueError("beta must be positive")
         return MappingProxyType(dict(value))
 
     @field_serializer("params")
-    def serialize_params(self, value: Mapping[str, Any]) -> dict[str, Any]:
+    def serialize_params(self, value: Mapping[str, float]) -> dict[str, float]:
         return dict(value)
 
 
 class Limits(FrozenModel):
     max_rounds: int = Field(gt=0)
-    deadline: AwareDatetime | None = None
+    session_deadline: timedelta = Field(default=timedelta(days=2), gt=timedelta(0))
     max_deals_per_day: int = Field(default=1, ge=0)
     max_deposit: int = Field(default=0, ge=0)
-    allow: tuple[str, ...] = ()
-    deny: tuple[str, ...] = ()
+    counterparts_allow: frozenset[int] | None = None
+    counterparts_deny: frozenset[int] = frozenset()
+
+    @field_serializer("counterparts_allow", "counterparts_deny")
+    def serialize_ids(self, value: frozenset[int] | None) -> list[int] | None:
+        return None if value is None else sorted(value)
 
 
 class Escalation(FrozenModel):
-    always: tuple[str, ...] = ()
+    always: frozenset[Literal["accept_deal"]] = frozenset()
+    timeout: timedelta = Field(default=timedelta(hours=1), gt=timedelta(0))
+
+    @field_serializer("always")
+    def serialize_always(self, value: frozenset[str]) -> list[str]:
+        return sorted(value)
+
+
+MEETING_ISSUES = {"time": "datetime", "place": "place"}
 
 
 class Mandate(FrozenModel):
@@ -218,6 +361,17 @@ class Mandate(FrozenModel):
         for predicate in self.hard_constraints + self.reservation.constraints:
             if not referenced_issues(predicate) <= ids:
                 raise ValueError("Constraint refers to an unknown issue")
+            check_constraint_values(predicate, {issue.id: issue for issue in self.issues})
+        if (
+            self.template == "meeting"
+            and {issue.id: issue.kind for issue in self.issues} != MEETING_ISSUES
+        ):
+            raise ValueError("Meeting template requires issues time:datetime and place:place")
+        cells = 1
+        for issue in self.issues:
+            cells *= issue.size()
+            if cells > MAX_GRID_CELLS:
+                raise ValueError(f"Candidate grid exceeds {MAX_GRID_CELLS} cells")
         return self
 
     @classmethod

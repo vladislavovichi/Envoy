@@ -1,0 +1,78 @@
+{
+  "source": "https://core.telegram.org/bots/api",
+  "checked_at": "2026-11-24",
+  "api_version": "10.5",
+  "methods": {
+    "sendChecklist": {
+      "since": "9.1",
+      "required": ["business_connection_id", "chat_id", "checklist"],
+      "optional": [
+        "disable_notification",
+        "protect_content",
+        "message_effect_id",
+        "reply_parameters",
+        "reply_markup"
+      ]
+    },
+    "createForumTopic": {
+      "since": "6.3",
+      "private_chats_since": "9.4",
+      "required": ["chat_id", "name"],
+      "optional": ["icon_color", "icon_custom_emoji_id"],
+      "returns": "ForumTopic.message_thread_id"
+    },
+    "answerCallbackQuery": {
+      "since": "1.0",
+      "required": ["callback_query_id"],
+      "optional": ["text", "show_alert", "url", "cache_time"]
+    }
+  },
+  "types": {
+    "InputChecklist": {
+      "required": ["title", "tasks"],
+      "optional": [
+        "parse_mode",
+        "title_entities",
+        "others_can_add_tasks",
+        "others_can_mark_tasks_as_done"
+      ],
+      "tasks_max": 30,
+      "title_max": 255
+    },
+    "InputChecklistTask": {"required": ["id", "text"], "text_max": 100},
+    "ChecklistTasksDone": {
+      "optional": ["checklist_message", "marked_as_done_task_ids", "marked_as_not_done_task_ids"]
+    },
+    "BusinessConnection": {
+      "fields": ["id", "user", "user_chat_id", "date", "rights", "is_enabled"],
+      "removed": ["can_reply"]
+    },
+    "BusinessBotRights": {
+      "fields": [
+        "can_reply",
+        "can_read_messages",
+        "can_delete_sent_messages",
+        "can_delete_all_messages",
+        "can_edit_name",
+        "can_edit_bio",
+        "can_edit_profile_photo",
+        "can_edit_username",
+        "can_change_gift_settings",
+        "can_view_gifts_and_stars",
+        "can_convert_gifts_to_stars",
+        "can_transfer_and_upgrade_gifts",
+        "can_transfer_stars",
+        "can_manage_stories"
+      ],
+      "reply_window_hours": 24
+    }
+  },
+  "message_fields": [
+    "business_connection_id",
+    "sender_business_bot",
+    "checklist",
+    "checklist_tasks_done",
+    "paid_messages_waived"
+  ],
+  "entity_types": ["bank_card_number", "ton_address"]
+}
