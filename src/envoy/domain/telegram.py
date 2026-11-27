@@ -104,6 +104,45 @@ class WidgetQueryUpdate:
 
 
 @dataclass(frozen=True)
+class BotMessageUpdate:
+    kind: ClassVar[str] = "bot_message"
+    bot_id: int
+    update_id: int
+    from_bot_id: int
+    chat_id: int
+    text: str
+    received_at: datetime
+
+
+@dataclass(frozen=True)
+class GuestMessageUpdate:
+    kind: ClassVar[str] = "guest_message"
+    update_id: int
+    guest_query_id: str
+    user_id: int
+    chat_id: int
+    text: str | None
+
+
+@dataclass(frozen=True)
+class InlineQueryUpdate:
+    kind: ClassVar[str] = "inline_query"
+    update_id: int
+    query_id: str
+    user_id: int
+    query: str
+
+
+@dataclass(frozen=True)
+class ManagedBotUpdate:
+    kind: ClassVar[str] = "managed_bot"
+    update_id: int
+    user_id: int
+    bot_id: int
+    bot_username: str
+
+
+@dataclass(frozen=True)
 class UnsupportedUpdate:
     kind: ClassVar[str] = "unsupported"
     update_id: int
@@ -115,6 +154,10 @@ type Update = (
     | BusinessMessageUpdate
     | CallbackUpdate
     | WidgetQueryUpdate
+    | BotMessageUpdate
+    | GuestMessageUpdate
+    | InlineQueryUpdate
+    | ManagedBotUpdate
     | UnsupportedUpdate
 )
 

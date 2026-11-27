@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Envoy — мандат встречи</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+      body { margin: 0; padding: 12px 16px; font: 15px/1.4 system-ui, sans-serif;
+        color: var(--tg-theme-text-color, #000); background: var(--tg-theme-bg-color, #fff); }
+      label { display: block; margin: 10px 0 4px; font-weight: 600; }
+      input, textarea, select { width: 100%; box-sizing: border-box; padding: 8px; font: inherit;
+        border: 1px solid var(--tg-theme-hint-color, #999); border-radius: 8px;
+        background: var(--tg-theme-secondary-bg-color, #f4f4f5); color: inherit; }
+      button { margin-top: 12px; width: 100%; min-height: 44px; border: 0; border-radius: 10px;
+        font: inherit; font-weight: 600; color: var(--tg-theme-button-text-color, #fff);
+        background: var(--tg-theme-button-color, #3390ec); }
+      button.secondary { background: var(--tg-theme-secondary-bg-color, #eee);
+        color: var(--tg-theme-text-color, #000); }
+      .hint { color: var(--tg-theme-hint-color, #707579); font-size: 13px; }
+      .notice { padding: 10px; border-radius: 8px; background: var(--tg-theme-secondary-bg-color, #eee); }
+      pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <main id="app"></main>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

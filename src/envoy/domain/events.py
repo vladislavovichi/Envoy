@@ -21,6 +21,7 @@ class JournalEntryType(StrEnum):
     checklist_opened = "checklist_opened"
     commitment_done = "commitment_done"
     closed = "closed"
+    peer_message = "peer_message"
 
 
 type ActionKind = Literal[
@@ -57,7 +58,7 @@ class SessionOpened(_Event):
 class MandateAttested(_Event):
     mandate_id: MandateId
     version: int
-    attestation: Literal["platform"] = "platform"
+    attestation: Literal["platform", "owner"] = "platform"
 
 
 class Disclosed(_Event):
@@ -108,6 +109,11 @@ class Closed(_Event):
     reason: str
 
 
+class PeerMessage(_Event):
+    direction: Literal["in", "out"]
+    text: str
+
+
 type SessionEvent = (
     SessionOpened
     | MandateAttested
@@ -120,6 +126,7 @@ type SessionEvent = (
     | ChecklistOpened
     | CommitmentDone
     | Closed
+    | PeerMessage
 )
 
 EVENT_TYPES: dict[JournalEntryType, type[_Event]] = {
@@ -134,6 +141,7 @@ EVENT_TYPES: dict[JournalEntryType, type[_Event]] = {
     JournalEntryType.checklist_opened: ChecklistOpened,
     JournalEntryType.commitment_done: CommitmentDone,
     JournalEntryType.closed: Closed,
+    JournalEntryType.peer_message: PeerMessage,
 }
 ENTRY_TYPES: dict[type[_Event], JournalEntryType] = {
     model: entry_type for entry_type, model in EVENT_TYPES.items()

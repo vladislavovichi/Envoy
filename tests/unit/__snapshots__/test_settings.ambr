@@ -1,8 +1,15 @@
 # serializer version: 1
 # name: test_settings_snapshot
   list([
+    'agent_bot_id',
     'agent_key',
     'agent_name',
+    'agent_owner_id',
+    'agent_pair_rate',
+    'agent_protocol',
+    'agent_retry_seconds',
+    'agent_sender_rate',
+    'agent_session_rate',
     'anthropic_api_key',
     'bot_token',
     'database_url',
@@ -16,6 +23,10 @@
     'llm_model',
     'master_key',
     'max_retry_after',
+    'miniapp_host',
+    'miniapp_port',
+    'miniapp_static',
+    'miniapp_url',
     'owner_ids',
     'owner_view',
     'per_chat_rate',

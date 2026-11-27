@@ -52,6 +52,7 @@ class MandateRow(Base):
     salt: Mapped[bytes] = mapped_column(LargeBinary)
     status: Mapped[str] = mapped_column(String(16))
     signature: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    attestation: Mapped[str] = mapped_column(String(16), server_default="platform")
     __table_args__ = (UniqueConstraint("owner_id", "version"),)
 
 
@@ -149,3 +150,133 @@ class OwnerSummaryTopicRow(Base):
     __tablename__ = "owner_summary_topics"
     owner_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     thread_id: Mapped[int] = mapped_column(BigInteger)
+
+
+class PeerPinRow(Base):
+    __tablename__ = "peer_pins"
+    bot_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    owner_id: Mapped[UUID] = mapped_column(Uuid)
+    owner_key: Mapped[bytes] = mapped_column(LargeBinary)
+    agent_id: Mapped[UUID] = mapped_column(Uuid)
+    agent_key: Mapped[bytes] = mapped_column(LargeBinary)
+    revision: Mapped[int] = mapped_column(Integer)
+    revoked: Mapped[bool] = mapped_column(Boolean)
+
+
+class PeerKeyHistoryRow(Base):
+    __tablename__ = "peer_key_history"
+    bot_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    position: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    agent_key: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class ProtocolSessionRow(Base):
+    __tablename__ = "protocol_sessions"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    bot_id: Mapped[int] = mapped_column(BigInteger)
+    peer_bot_id: Mapped[int] = mapped_column(BigInteger)
+    owner_id: Mapped[UUID] = mapped_column(Uuid, index=True)
+    closed: Mapped[bool] = mapped_column(Boolean)
+    agreed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_due: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    body_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    __table_args__ = (Index("ix_protocol_sessions_pair", "bot_id", "peer_bot_id", "closed"),)
+
+
+class ProtocolUpdateRow(Base):
+    __tablename__ = "protocol_updates"
+    bot_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    update_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+
+
+class ProtocolNonceRow(Base):
+    __tablename__ = "protocol_nonces"
+    sender: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    nonce: Mapped[bytes] = mapped_column(LargeBinary, primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class ProtocolEvidenceRow(Base):
+    __tablename__ = "protocol_evidence"
+    session_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    bot_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    update_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    text_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class OwnerKeyRow(Base):
+    __tablename__ = "owner_keys"
+    owner_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    public_key: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class SigningChallengeRow(Base):
+    __tablename__ = "signing_challenges"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_id: Mapped[UUID] = mapped_column(Uuid, index=True)
+    purpose: Mapped[str] = mapped_column(String(16))
+    nonce: Mapped[bytes] = mapped_column(LargeBinary)
+    bytes_to_sign: Mapped[bytes] = mapped_column(LargeBinary)
+    context: Mapped[bytes] = mapped_column(LargeBinary)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    signature: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    result: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+
+
+class OwnerDelegationRow(Base):
+    __tablename__ = "owner_delegations"
+    owner_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    position: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    agent_key: Mapped[bytes] = mapped_column(LargeBinary)
+    body: Mapped[bytes] = mapped_column(LargeBinary)
+    revoked: Mapped[bool] = mapped_column(Boolean)
+
+
+class InvitationRow(Base):
+    __tablename__ = "invitations"
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary, primary_key=True)
+    session_id: Mapped[UUID] = mapped_column(Uuid, index=True)
+    counterpart_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SessionRouteRow(Base):
+    __tablename__ = "session_routes"
+    session_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    route: Mapped[str] = mapped_column(String(64))
+
+
+class AgentAuthorizationRow(Base):
+    __tablename__ = "agent_authorizations"
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    bot_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+
+
+class MandateCardRow(Base):
+    __tablename__ = "mandate_widgets"
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    message_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    owner_id: Mapped[UUID] = mapped_column(Uuid)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    revision: Mapped[int] = mapped_column(Integer)
+    draft_id: Mapped[UUID] = mapped_column(Uuid)
+    slots: Mapped[list[Any]] = mapped_column(JSON)
+    selected: Mapped[list[Any]] = mapped_column(JSON)
+    issues: Mapped[list[Any]] = mapped_column(JSON)
+
+
+class ManagedBotRow(Base):
+    __tablename__ = "managed_bots"
+    owner_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    request_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    owner_user: Mapped[int] = mapped_column(BigInteger)
+    secret: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16))
+    bot_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
+    username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    token: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    trusted: Mapped[list[Any]] = mapped_column(JSON)

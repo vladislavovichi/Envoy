@@ -6,6 +6,7 @@ from envoy.mandate.schema import Mandate
 from envoy.ports.ids import IdGenerator
 
 type MandateStatus = Literal["draft", "active", "superseded", "discarded"]
+type Attestation = Literal["platform", "owner"]
 
 
 class MandateNotFound(LookupError):
@@ -25,6 +26,7 @@ class StoredMandate:
     salt: bytes
     status: MandateStatus
     signature: bytes | None = None
+    attestation: Attestation = "platform"
 
 
 class MandateStore(Protocol):
@@ -33,6 +35,31 @@ class MandateStore(Protocol):
     async def discard(self, mandate_id: MandateId) -> StoredMandate: ...
     async def get(self, mandate_id: MandateId) -> StoredMandate: ...
     async def active(self, owner: OwnerId) -> StoredMandate | None: ...
+    async def activate_signed(
+        self,
+        owner: OwnerId,
+        mandate_id: MandateId,
+        expected_version: int | None,
+        signature: bytes,
+    ) -> StoredMandate: ...
+
+
+def check_signed_activation(
+    record: StoredMandate,
+    current: StoredMandate | None,
+    owner: OwnerId,
+    expected_version: int | None,
+    signature: bytes,
+) -> bool:
+    if record.owner != owner:
+        raise MandateStateError("not_owner")
+    if record.status == "active" and record.signature == signature:
+        return False
+    if record.status != "draft":
+        raise MandateStateError(f"Mandate is {record.status}")
+    if (None if current is None else current.version) != expected_version:
+        raise MandateStateError("stale_version")
+    return True
 
 
 class InMemoryMandateStore:
@@ -70,6 +97,23 @@ class InMemoryMandateStore:
             if other.owner == record.owner and other.status == "active":
                 self._records[other.id] = replace(other, status="superseded")
         activated = replace(record, status="active", signature=signature)
+        self._records[mandate_id] = activated
+        return activated
+
+    async def activate_signed(
+        self,
+        owner: OwnerId,
+        mandate_id: MandateId,
+        expected_version: int | None,
+        signature: bytes,
+    ) -> StoredMandate:
+        record = await self.get(mandate_id)
+        current = await self.active(owner)
+        if not check_signed_activation(record, current, owner, expected_version, signature):
+            return record
+        if current is not None:
+            self._records[current.id] = replace(current, status="superseded")
+        activated = replace(record, status="active", signature=signature, attestation="owner")
         self._records[mandate_id] = activated
         return activated
 

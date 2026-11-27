@@ -41,6 +41,17 @@ class Settings(BaseSettings):
     owner_view: Literal["text", "widget"] = "text"
     widget_topic_links: Literal["direct", "request"] = "request"
     summary_hour: int = Field(default=20, ge=0, le=23)
+    agent_protocol: bool = False
+    agent_bot_id: int | None = Field(default=None, gt=0)
+    agent_owner_id: int | None = Field(default=None, gt=0)
+    agent_session_rate: int = Field(default=12, gt=0)
+    agent_pair_rate: int = Field(default=30, gt=0)
+    agent_sender_rate: int = Field(default=60, gt=0)
+    agent_retry_seconds: float = Field(default=5, gt=0)
+    miniapp_host: str = "127.0.0.1"
+    miniapp_port: int | None = Field(default=None, ge=1, le=65535)
+    miniapp_static: str = "miniapp/dist"
+    miniapp_url: str | None = None
 
     @field_validator("owner_ids", mode="before")
     @classmethod

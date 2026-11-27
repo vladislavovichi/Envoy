@@ -4,9 +4,13 @@ from typing import Literal, Protocol
 from aiolimiter import AsyncLimiter
 
 from envoy.domain.telegram import (
+    BotMessageUpdate,
     BusinessConnectionUpdate,
     BusinessMessageUpdate,
     CallbackUpdate,
+    GuestMessageUpdate,
+    InlineQueryUpdate,
+    ManagedBotUpdate,
     MessageUpdate,
     UnsupportedUpdate,
     Update,
@@ -77,10 +81,23 @@ class InboundFilter:
                 if not await self._admit(update.user_id):
                     return Dropped("rate_limited")
                 return Passed(update, "owner")
-            case MessageUpdate():
+            case ManagedBotUpdate():
                 if not await self._owners.is_owner(update.user_id):
                     return Dropped("unknown_sender")
+                return Passed(update, "owner")
+            case GuestMessageUpdate() | InlineQueryUpdate():
+                if not await self._admit(update.user_id):
+                    return Dropped("rate_limited")
+                return Passed(update, "counterpart")
+            case MessageUpdate():
+                if not await self._owners.is_owner(update.user_id):
+                    parts = (update.text or "").split()
+                    if len(parts) == 2 and parts[0] in ("/start", "/authorize"):
+                        return await self._text(update, "counterpart")
+                    return Dropped("unknown_sender")
                 return await self._text(update, "owner")
+            case BotMessageUpdate():
+                return Passed(update, "counterpart")
             case BusinessMessageUpdate():
                 owner = await self._owners.connection_owner(update.connection_id)
                 if owner is None or not await self._owners.is_owner(owner):

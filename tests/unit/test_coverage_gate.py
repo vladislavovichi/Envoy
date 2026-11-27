@@ -21,6 +21,9 @@ def test_coverage_gate_checks_branch_percentage_per_package(tmp_path, covered, e
                     "src/envoy/engine/engine.py": {
                         "summary": {"num_branches": 4, "covered_branches": 4}
                     },
+                    "src/envoy/protocol/machine.py": {
+                        "summary": {"num_branches": 10, "covered_branches": 10}
+                    },
                 }
             }
         )

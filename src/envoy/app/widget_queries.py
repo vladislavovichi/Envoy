@@ -6,6 +6,7 @@ import structlog
 
 from envoy.app.escalation import Choice, EscalationResolver, ResolveResult
 from envoy.app.locks import SessionLocks, session_key
+from envoy.app.mandate_widget import MandateWidgetFlow
 from envoy.app.owner_view import TEXT_VERSION, TextOwnerView
 from envoy.app.ports import OwnerViewStore, SessionRecord, SessionRepository
 from envoy.domain.ids import SessionId, owner_for_user
@@ -41,6 +42,7 @@ class WidgetQueryFlow:
         locks: SessionLocks,
         clock: Clock,
         text: TextOwnerView,
+        mandate_cards: MandateWidgetFlow | None = None,
     ) -> None:
         self._transport = transport
         self._sessions = sessions
@@ -50,12 +52,16 @@ class WidgetQueryFlow:
         self._clock = clock
         self._text = text
         self._linked: set[str] = set()
+        self._mandate_cards = mandate_cards
 
     async def reject(self, update: WidgetQueryUpdate) -> None:
         await self._answer(update, "invalid")
 
     async def handle(self, update: WidgetQueryUpdate) -> None:
         data = update.data or ""
+        if data.startswith("m:") and self._mandate_cards is not None:
+            await self._mandate_cards.handle(update)
+            return
         escalation = ESCALATION_QUERY.fullmatch(data)
         if escalation is not None:
             choice: Choice = "approve" if escalation.group(1) == "a" else "decline"

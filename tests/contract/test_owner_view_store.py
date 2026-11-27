@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
@@ -99,3 +100,27 @@ async def test_summary_refs_delivery_marks_and_topics(store) -> None:
     await store.set_summary_topic(OWNER, 77)
     await store.set_summary_topic(OWNER, 78)
     assert await store.summary_topic(OWNER) == 78
+
+
+async def test_mandate_card_binding_round_trips(backend, factory) -> None:
+    from envoy.app.mandate_widget import InMemoryMandateCardStore, MandateCard
+    from envoy.persistence.owner_views import PgMandateCardStore
+
+    store = InMemoryMandateCardStore() if backend == "memory" else PgMandateCardStore(factory)
+    card = MandateCard(
+        OWNER,
+        1,
+        1,
+        70,
+        3,
+        MandateId(UUID(int=4)),
+        (T0, T0 + timedelta(hours=1)),
+        (True, False),
+        ("place", "time"),
+    )
+    assert await store.find(1, 70) is None
+    await store.put(card)
+    assert await store.find(1, 70) == card
+    await store.put(replace(card, revision=4))
+    assert (await store.find(1, 70)).revision == 4
+    assert await store.find(2, 70) is None

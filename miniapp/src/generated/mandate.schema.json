@@ -1,0 +1,668 @@
+{
+  "$defs": {
+    "And": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "and",
+          "title": "Kind",
+          "type": "string"
+        },
+        "predicates": {
+          "items": {
+            "$ref": "#/$defs/Predicate"
+          },
+          "minItems": 1,
+          "title": "Predicates",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "predicates"
+      ],
+      "title": "And",
+      "type": "object"
+    },
+    "Cmp": {
+      "additionalProperties": false,
+      "properties": {
+        "issue": {
+          "title": "Issue",
+          "type": "string"
+        },
+        "kind": {
+          "const": "cmp",
+          "default": "cmp",
+          "title": "Kind",
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            "<=",
+            ">=",
+            "in",
+            "between",
+            "not_in"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "issue",
+        "op",
+        "value"
+      ],
+      "title": "Cmp",
+      "type": "object"
+    },
+    "DatetimeIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "choices": {
+          "items": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Choices",
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "datetime",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "choices"
+      ],
+      "title": "DatetimeIssue",
+      "type": "object"
+    },
+    "DurationIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "duration",
+          "title": "Kind",
+          "type": "string"
+        },
+        "maximum": {
+          "format": "duration",
+          "title": "Maximum",
+          "type": "string"
+        },
+        "minimum": {
+          "format": "duration",
+          "title": "Minimum",
+          "type": "string"
+        },
+        "step": {
+          "format": "duration",
+          "title": "Step",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "minimum",
+        "maximum",
+        "step",
+        "kind"
+      ],
+      "title": "DurationIssue",
+      "type": "object"
+    },
+    "EnumIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "choices": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Choices",
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "enum",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "choices",
+        "kind"
+      ],
+      "title": "EnumIssue",
+      "type": "object"
+    },
+    "Escalation": {
+      "additionalProperties": false,
+      "properties": {
+        "always": {
+          "default": [],
+          "items": {
+            "const": "accept_deal",
+            "type": "string"
+          },
+          "title": "Always",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "timeout": {
+          "default": "PT1H",
+          "format": "duration",
+          "title": "Timeout",
+          "type": "string"
+        }
+      },
+      "title": "Escalation",
+      "type": "object"
+    },
+    "IntegerIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "integer",
+          "title": "Kind",
+          "type": "string"
+        },
+        "maximum": {
+          "title": "Maximum",
+          "type": "integer"
+        },
+        "minimum": {
+          "title": "Minimum",
+          "type": "integer"
+        },
+        "step": {
+          "default": 1,
+          "title": "Step",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "minimum",
+        "maximum",
+        "kind"
+      ],
+      "title": "IntegerIssue",
+      "type": "object"
+    },
+    "Issue": {
+      "discriminator": {
+        "mapping": {
+          "datetime": "#/$defs/DatetimeIssue",
+          "duration": "#/$defs/DurationIssue",
+          "enum": "#/$defs/EnumIssue",
+          "integer": "#/$defs/IntegerIssue",
+          "money": "#/$defs/MoneyIssue",
+          "place": "#/$defs/PlaceIssue"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/MoneyIssue"
+        },
+        {
+          "$ref": "#/$defs/DatetimeIssue"
+        },
+        {
+          "$ref": "#/$defs/PlaceIssue"
+        },
+        {
+          "$ref": "#/$defs/EnumIssue"
+        },
+        {
+          "$ref": "#/$defs/IntegerIssue"
+        },
+        {
+          "$ref": "#/$defs/DurationIssue"
+        }
+      ]
+    },
+    "JsonValue": {},
+    "Limits": {
+      "additionalProperties": false,
+      "properties": {
+        "counterparts_allow": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Counterparts Allow"
+        },
+        "counterparts_deny": {
+          "default": [],
+          "items": {
+            "type": "integer"
+          },
+          "title": "Counterparts Deny",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "max_deals_per_day": {
+          "default": 1,
+          "minimum": 0,
+          "title": "Max Deals Per Day",
+          "type": "integer"
+        },
+        "max_deposit": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Max Deposit",
+          "type": "integer"
+        },
+        "max_rounds": {
+          "exclusiveMinimum": 0,
+          "title": "Max Rounds",
+          "type": "integer"
+        },
+        "session_deadline": {
+          "default": "P2D",
+          "format": "duration",
+          "title": "Session Deadline",
+          "type": "string"
+        }
+      },
+      "required": [
+        "max_rounds"
+      ],
+      "title": "Limits",
+      "type": "object"
+    },
+    "MoneyIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "default": "RUB",
+          "title": "Currency",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "money",
+          "title": "Kind",
+          "type": "string"
+        },
+        "maximum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Maximum"
+        },
+        "minimum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Minimum"
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Step"
+        }
+      },
+      "required": [
+        "id",
+        "minimum",
+        "maximum",
+        "step",
+        "kind"
+      ],
+      "title": "MoneyIssue",
+      "type": "object"
+    },
+    "Not": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "not",
+          "title": "Kind",
+          "type": "string"
+        },
+        "predicate": {
+          "$ref": "#/$defs/Predicate"
+        }
+      },
+      "required": [
+        "kind",
+        "predicate"
+      ],
+      "title": "Not",
+      "type": "object"
+    },
+    "Or": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "or",
+          "title": "Kind",
+          "type": "string"
+        },
+        "predicates": {
+          "items": {
+            "$ref": "#/$defs/Predicate"
+          },
+          "minItems": 1,
+          "title": "Predicates",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "predicates"
+      ],
+      "title": "Or",
+      "type": "object"
+    },
+    "PiecewiseLinear": {
+      "additionalProperties": false,
+      "properties": {
+        "points": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "minItems": 2,
+          "title": "Points",
+          "type": "array"
+        }
+      },
+      "required": [
+        "points"
+      ],
+      "title": "PiecewiseLinear",
+      "type": "object"
+    },
+    "PlaceIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "choices": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Choices",
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "place",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "choices",
+        "kind"
+      ],
+      "title": "PlaceIssue",
+      "type": "object"
+    },
+    "Predicate": {
+      "discriminator": {
+        "mapping": {
+          "and": "#/$defs/And",
+          "cmp": "#/$defs/Cmp",
+          "not": "#/$defs/Not",
+          "or": "#/$defs/Or",
+          "requires": "#/$defs/Requires"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Cmp"
+        },
+        {
+          "$ref": "#/$defs/And"
+        },
+        {
+          "$ref": "#/$defs/Or"
+        },
+        {
+          "$ref": "#/$defs/Not"
+        },
+        {
+          "$ref": "#/$defs/Requires"
+        }
+      ]
+    },
+    "Requires": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "$ref": "#/$defs/Predicate"
+        },
+        "consequence": {
+          "$ref": "#/$defs/Predicate"
+        },
+        "kind": {
+          "const": "requires",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "condition",
+        "consequence"
+      ],
+      "title": "Requires",
+      "type": "object"
+    },
+    "Reservation": {
+      "additionalProperties": false,
+      "properties": {
+        "constraints": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Predicate"
+          },
+          "title": "Constraints",
+          "type": "array"
+        },
+        "minimum_utility": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Minimum Utility",
+          "type": "number"
+        }
+      },
+      "required": [
+        "minimum_utility"
+      ],
+      "title": "Reservation",
+      "type": "object"
+    },
+    "StrategySpec": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "time_dependent",
+          "default": "time_dependent",
+          "title": "Kind",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "title": "StrategySpec",
+      "type": "object"
+    },
+    "UtilitySpec": {
+      "additionalProperties": false,
+      "properties": {
+        "value_functions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/PiecewiseLinear"
+          },
+          "title": "Value Functions",
+          "type": "object"
+        },
+        "weights": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Weights",
+          "type": "object"
+        }
+      },
+      "required": [
+        "weights",
+        "value_functions"
+      ],
+      "title": "UtilitySpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "escalation": {
+      "$ref": "#/$defs/Escalation"
+    },
+    "hard_constraints": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Predicate"
+      },
+      "title": "Hard Constraints",
+      "type": "array"
+    },
+    "issues": {
+      "items": {
+        "$ref": "#/$defs/Issue"
+      },
+      "minItems": 1,
+      "title": "Issues",
+      "type": "array"
+    },
+    "limits": {
+      "$ref": "#/$defs/Limits"
+    },
+    "reservation": {
+      "$ref": "#/$defs/Reservation"
+    },
+    "strategy": {
+      "$ref": "#/$defs/StrategySpec"
+    },
+    "template": {
+      "enum": [
+        "meeting",
+        "purchase",
+        "advertisement",
+        "exchange",
+        "join",
+        "freelance"
+      ],
+      "title": "Template",
+      "type": "string"
+    },
+    "utility": {
+      "$ref": "#/$defs/UtilitySpec"
+    },
+    "version": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "template",
+    "issues",
+    "utility",
+    "reservation",
+    "strategy",
+    "limits",
+    "escalation"
+  ],
+  "title": "Mandate",
+  "type": "object"
+}

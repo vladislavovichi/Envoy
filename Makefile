@@ -1,7 +1,7 @@
 COMPOSE = docker compose -f compose.yaml -f compose.dev.yaml
 TEST_COMPOSE = docker compose -f compose.yaml -f compose.test.yaml --profile test
 
-.PHONY: up down migrate test lint app
+.PHONY: up down migrate test test-federation lint app
 
 up:
 	docker compose -f compose.yaml -f compose.dev.yaml up -d --wait postgres
@@ -19,6 +19,10 @@ migrate:
 
 test:
 	$(TEST_COMPOSE) run --rm tests
+
+test-federation:
+	docker compose -f compose.federation.yaml run --rm --build federation
+	docker compose -f compose.federation.yaml down
 
 lint:
 	$(TEST_COMPOSE) run --rm --no-deps tests sh -ec "black --check . && ruff check && mypy && lint-imports"

@@ -28,6 +28,12 @@ REGISTRY = (
     TelegramDependency("sendWidget", "10.4", "phase 1b owner widgets"),
     TelegramDependency("editMessageWidgetData", "10.4", "phase 1b owner widget state"),
     TelegramDependency("answerWidgetQuery", "10.4", "phase 1b owner widget queries"),
+    TelegramDependency("setMyDescription", "6.6", "phase 2 agent key fingerprint"),
+    TelegramDependency("answerInlineQuery", "1.0", "phase 2 invitation cards inline"),
+    TelegramDependency("getManagedBotToken", "9.6", "phase 2 managed agents"),
+    TelegramDependency("replaceManagedBotToken", "9.6", "phase 2 managed agents"),
+    TelegramDependency("setManagedBotAccessSettings", "10.0", "phase 2 managed agent access"),
+    TelegramDependency("setMyName", "6.7", "phase 2 managed agent profile"),
 )
 
 

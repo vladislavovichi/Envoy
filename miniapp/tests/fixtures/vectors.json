@@ -1,0 +1,114 @@
+{
+  "ed25519": {
+    "message": "ZW52b3kvbWFuZGF0ZS92MSDCtyDQv9GA0L7QstC10YDQvtGH0L3Ri9C5INCy0LXQutGC0L7RgA",
+    "public_key": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "seed": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "signature": "4F8LIhBTM83dYEb4QotIZyly9419_V2iYDEXYkbZSi8SrEq7smQmQvfzrgjrAtAINQywTnxWVYKd2z_jV0SeCg"
+  },
+  "meeting": {
+    "mandate": {
+      "escalation": {
+        "always": [
+          "accept_deal"
+        ]
+      },
+      "hard_constraints": [
+        {
+          "issue": "place",
+          "kind": "cmp",
+          "op": "not_in",
+          "value": [
+            "вокзал"
+          ]
+        }
+      ],
+      "issues": [
+        {
+          "choices": [
+            "2026-12-03T10:00:00+03:00",
+            "2026-12-03T12:00:00+03:00",
+            "2026-12-04T09:30:00+03:00"
+          ],
+          "id": "time",
+          "kind": "datetime"
+        },
+        {
+          "choices": [
+            "кафе «Пушкин»",
+            "офис"
+          ],
+          "id": "place",
+          "kind": "place"
+        }
+      ],
+      "limits": {
+        "max_rounds": 6
+      },
+      "reservation": {
+        "minimum_utility": 0.4
+      },
+      "strategy": {
+        "kind": "time_dependent",
+        "params": {
+          "beta": 0.5
+        }
+      },
+      "template": "meeting",
+      "utility": {
+        "value_functions": {
+          "place": {
+            "points": [
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                0
+              ]
+            ]
+          },
+          "time": {
+            "points": [
+              [
+                1796281200,
+                0.5
+              ],
+              [
+                1796288400,
+                1
+              ],
+              [
+                1796365800,
+                0
+              ]
+            ]
+          }
+        },
+        "weights": {
+          "place": 0.4,
+          "time": 0.6
+        }
+      }
+    },
+    "state": {
+      "confirm_before_agreeing": true,
+      "excluded": [
+        "вокзал"
+      ],
+      "max_rounds": 6,
+      "places": [
+        "кафе «Пушкин»",
+        "офис"
+      ],
+      "reservation": 0.4,
+      "slots": [
+        "2026-12-03T12:00",
+        "2026-12-03T10:00",
+        "2026-12-04T09:30"
+      ],
+      "time_weight": 60,
+      "timezone": "Europe/Moscow"
+    }
+  }
+}

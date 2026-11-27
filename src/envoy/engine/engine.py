@@ -56,7 +56,13 @@ class NegotiationEngine:
             )
         )
 
-    def decide(self, incoming: Offer | None, history: Sequence[Offer], round: int) -> Decision:
+    def decide(
+        self,
+        incoming: Offer | None,
+        history: Sequence[Offer],
+        round: int,
+        exclude: Sequence[Offer] = (),
+    ) -> Decision:
         compiled = self._compiled
         own = compiled.utility.table()
         acceptable = compiled.constraints.mask() & (own >= compiled.reservation - TOLERANCE)
@@ -68,7 +74,18 @@ class NegotiationEngine:
                 return Accept(incoming)
             return Reject("round_limit")
         target = self.target(round, history)
-        candidates = acceptable & (own >= target - TOLERANCE)
+        fresh = acceptable.copy()
+        for offer in exclude:
+            index = compiled.grid.index_of(offer)
+            if index is not None:
+                fresh[index] = False
+        if not fresh.any():
+            if incoming is not None and incoming_utility is not None:
+                return Accept(incoming)
+            return Reject("no_new_offer")
+        candidates = fresh & (own >= target - TOLERANCE)
+        if not candidates.any():
+            candidates = fresh & (own >= float(own[fresh].max()) - TOLERANCE)
         opp = self._opponent.utilities(compiled.grid, history)
         front = pareto_front(own, opp, candidates)
         own_flat = own.ravel()[front]

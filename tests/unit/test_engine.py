@@ -151,3 +151,23 @@ def test_last_offer_proximity_prefers_equal_issues() -> None:
     assert partial.max() == 0.5
     missing = model.utilities(grid, (Offer(values={"place": "cafe"}),))
     assert missing.max() == 0.5
+
+
+def test_engine_never_repeats_excluded_offers_and_concedes_minimally() -> None:
+    first = engine().decide(None, (), 0)
+    assert isinstance(first, Counter)
+    second = engine().decide(None, (), 0, exclude=(first.offer,))
+    assert isinstance(second, Counter)
+    assert second.offer != first.offer
+
+
+def test_engine_accepts_or_rejects_when_every_offer_was_sent() -> None:
+    from envoy.mandate.compiler import compile_mandate
+
+    compiled = compile_mandate(meeting_mandate())
+    every = [compiled.grid.offer_at_flat(index) for index in range(compiled.utility.table().size)]
+    assert engine().decide(None, (), 0, exclude=every) == Reject("no_new_offer")
+    incoming = Offer(values={"time": SLOTS[0], "place": "office"})
+    assert engine().decide(incoming, (incoming,), 1, exclude=every) == Accept(incoming)
+    unknown = Offer(values={"time": SLOTS[0], "place": "moon"})
+    assert isinstance(engine().decide(None, (), 0, exclude=(unknown,)), Counter)

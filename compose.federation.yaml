@@ -1,0 +1,59 @@
+services:
+  postgres-a:
+    image: postgres:18.7
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      POSTGRES_USER: ${ENVOY_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${ENVOY_POSTGRES_PASSWORD}
+      POSTGRES_DB: federation_a
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d federation_a']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  postgres-b:
+    image: postgres:18.7
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      POSTGRES_USER: ${ENVOY_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${ENVOY_POSTGRES_PASSWORD}
+      POSTGRES_DB: federation_b
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d federation_b']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  federation:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: dev
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      ENVOY_DATABASE_URL: ""
+      ENVOY_TEST_DATABASE_URL: ""
+      ENVOY_FEDERATION_DATABASE_A: postgresql+asyncpg://${ENVOY_POSTGRES_USER}:${ENVOY_POSTGRES_PASSWORD}@postgres-a:5432/federation_a
+      ENVOY_FEDERATION_DATABASE_B: postgresql+asyncpg://${ENVOY_POSTGRES_USER}:${ENVOY_POSTGRES_PASSWORD}@postgres-b:5432/federation_b
+    depends_on:
+      postgres-a:
+        condition: service_healthy
+      postgres-b:
+        condition: service_healthy
+    command:
+      - pytest
+      - --no-cov
+      - -p
+      - no:randomly
+      - tests/integration/test_federation_meeting.py
+      - tests/integration/test_agent_flow.py
+      - tests/property/test_protocol_faults.py

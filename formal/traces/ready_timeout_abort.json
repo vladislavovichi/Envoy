@@ -1,0 +1,2 @@
+{"steps": [["local", "A", "offer", "a1"], ["deliver", 0], ["local", "B", "accept"], ["deliver", 0], ["local", "B", "ready"], ["drop", 0], ["fire", "A", "ready"], ["settle"]],
+ "expect": {"A": "ABORTED", "B": "ABORTED"}, "checklists": {"A": 0, "B": 0}}

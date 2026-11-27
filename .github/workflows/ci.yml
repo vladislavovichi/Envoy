@@ -71,7 +71,7 @@ jobs:
 
       - name: Check journal and crypto coverage
         run: |
-          poetry run coverage report --include='*/envoy/journal/*,*/envoy/crypto/*,*/envoy/engine/*' --fail-under=90
+          poetry run coverage report --include='*/envoy/journal/*,*/envoy/crypto/*,*/envoy/engine/*,*/envoy/protocol/*' --fail-under=90
           poetry run coverage json -o .coverage.json
           poetry run python scripts/check_coverage.py .coverage.json
 
@@ -91,6 +91,7 @@ jobs:
           docker compose -f compose.yaml config --quiet
           docker compose -f compose.yaml -f compose.dev.yaml config --quiet
           docker compose -f compose.yaml -f compose.test.yaml --profile test config --quiet
+          docker compose -f compose.federation.yaml config --quiet
           rm .env
 
       - name: Generate test environment
@@ -102,6 +103,9 @@ jobs:
 
       - name: Run Compose tests
         run: make test
+
+      - name: Run two-operator federation tests
+        run: make test-federation
 
       - name: Build runtime image
         run: docker build --target runtime -f docker/Dockerfile -t envoy-phase0-runtime .
@@ -123,3 +127,59 @@ jobs:
       - name: Stop Compose services
         if: ${{ always() && steps.test-env.outcome == 'success' }}
         run: make down
+
+  miniapp:
+    name: Mini App
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24.14.1"
+          cache: npm
+          cache-dependency-path: miniapp/package-lock.json
+
+      - name: Install
+        run: npm --prefix miniapp ci --no-audit --no-fund
+
+      - name: Test
+        run: npm --prefix miniapp test
+
+      - name: Build
+        run: npm --prefix miniapp run build
+
+  tlc:
+    name: TLA+ model check
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    env:
+      TLA_VERSION: v1.7.4
+      TLA_SHA256: 936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Download TLC
+        run: |
+          curl -fsSL -o tla2tools.jar "https://github.com/tlaplus/tlaplus/releases/download/${TLA_VERSION}/tla2tools.jar"
+          echo "${TLA_SHA256}  tla2tools.jar" | sha256sum -c -
+
+      - name: Check safety invariants
+        run: java -XX:+UseParallelGC -jar tla2tools.jar -workers auto -config formal/Negotiation.cfg formal/Negotiation.tla
+
+      - name: Check decision convergence
+        run: java -XX:+UseParallelGC -jar tla2tools.jar -workers auto -config formal/NegotiationLive.cfg formal/Negotiation.tla

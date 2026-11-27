@@ -224,3 +224,8 @@ __marimo__/
 .superpowers/
 pytest-cache-files-*/
 .coverage.json
+
+formal/tla2tools.jar
+formal/states/
+formal/*_TTrace_*.tla
+miniapp/node_modules/

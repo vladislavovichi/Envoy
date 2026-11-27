@@ -1,6 +1,6 @@
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from envoy.domain.telegram import ReplyMarkup, SentMessage, SurfaceCapabilities, Update
 
@@ -53,6 +53,31 @@ class CallbackAnswerer(Protocol):
 
 class BotIdentity(Protocol):
     async def bot_username(self) -> str: ...
+
+
+class InviteSurface(Protocol):
+    async def answer_guest(self, query_id: str, result: Mapping[str, Any]) -> None: ...
+    async def answer_inline(self, query_id: str, results: Sequence[Mapping[str, Any]]) -> None: ...
+
+
+class BotProfile(Protocol):
+    async def set_description(self, text: str) -> None: ...
+
+
+class ManagedBotProfile(BotProfile, UpdateSource, Protocol):
+    async def set_name(self, name: str) -> None: ...
+    async def close(self) -> None: ...
+
+
+class BotManager(Protocol):
+    async def request_managed_bot(
+        self, chat_id: int, request_id: int, name: str, username: str
+    ) -> None: ...
+    async def managed_bot_token(self, bot_id: int) -> str: ...
+    async def replace_managed_bot_token(self, bot_id: int) -> str: ...
+    async def set_managed_bot_access(
+        self, bot_id: int, restricted: bool, user_ids: Sequence[int]
+    ) -> None: ...
 
 
 class ChatSurface(Protocol):
