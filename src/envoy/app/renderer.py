@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
@@ -10,6 +10,7 @@ from envoy.domain.ids import MandateId
 from envoy.domain.offer import IssueValue, Offer
 from envoy.domain.telegram import InlineButton, ReplyMarkup
 from envoy.mandate.schema import Mandate
+from envoy.security.widget_projection import Dashboard, EscalationCard, IssueRow, SummaryRow
 
 ISSUE_LABELS = {"time": "время", "place": "место"}
 REASON_TEXT = {
@@ -17,6 +18,20 @@ REASON_TEXT = {
     "reply_window_closed": "окно ответа в чате закрыто: собеседник не писал больше 24 часов",
     "translator_failed": "не удалось разобрать сообщение собеседника",
     "counterpart_unclear": "собеседник трижды ответил неясно",
+}
+
+STATUS_TEXT = {
+    "counterpart": "ждёт ответа собеседника",
+    "owner": "ждёт вашего решения",
+    "agreed": "согласовано",
+    "fulfilled": "закрыто: встреча состоялась",
+    "rejected": "закрыто без сделки",
+    "expired": "закрыто по сроку",
+}
+OUTCOME_TEXT = {
+    "approved": "одобрено",
+    "declined": "отклонено",
+    "timeout": "время истекло — отклонено",
 }
 
 type Button = InlineButton
@@ -59,6 +74,12 @@ class TemplateRenderer:
             except ValueError:
                 return value
         return str(value)
+
+    def value(self, value: JsonValue) -> str:
+        return self._value(value)
+
+    def _moment(self, value: datetime) -> str:
+        return value.astimezone(self._zone).strftime("%d.%m.%Y %H:%M")
 
     def _terms(self, values: Mapping[str, IssueValue | JsonValue]) -> str:
         return ", ".join(
@@ -132,3 +153,44 @@ class TemplateRenderer:
                 ),
             ),
         )
+
+    @staticmethod
+    def _rows(rows: tuple[IssueRow, ...]) -> str:
+        return ", ".join(f"{row.name}: {row.ours or '—'}" for row in rows) or "—"
+
+    def owner_escalation(self, card: EscalationCard) -> RenderedCard:
+        text = (
+            f"Нужно решение: {REASON_TEXT['confirm_action']}.\nУсловия: {self._rows(card.issues)}"
+        )
+        if card.outcome != "pending":
+            return RenderedCard(f"{text}\nИтог: {OUTCOME_TEXT[card.outcome]}.")
+        return RenderedCard(
+            f"{text}\nРешение нужно до {self._moment(card.expires_at)}.",
+            (
+                (
+                    InlineButton("Одобрить", f"approve:{card.cause}", "success"),
+                    InlineButton("Отклонить", f"decline:{card.cause}", "danger"),
+                ),
+            ),
+        )
+
+    def owner_dashboard(self, card: Dashboard) -> str:
+        lines = [
+            f"Ход сделки: раунд {card.round} из {card.max_rounds}, "
+            f"{STATUS_TEXT.get(card.status, card.status)}."
+        ]
+        for row in card.issues:
+            lines.append(f"• {row.name}: вы — {row.ours or '—'}, они — {row.theirs or '—'}")
+        if card.proximity is not None:
+            lines.append(f"Совпадение условий: {card.proximity}%")
+        if card.verified is not None:
+            lines.append("Журнал проверен." if card.verified else "Проверка журнала не пройдена.")
+        return "\n".join(lines)
+
+    def summary_row(self, row: SummaryRow) -> str:
+        line = f"• {row.label} — {STATUS_TEXT.get(row.status, row.status)}"
+        return line if row.topic_url is None else f"{line} — {row.topic_url}"
+
+    def owner_summary(self, day: date, rows: tuple[SummaryRow, ...], total: int) -> str:
+        head = f"Сводка Envoy за {day.strftime('%d.%m.%Y')}, активных сделок: {total}"
+        return "\n".join([head, *(self.summary_row(row) for row in rows)])

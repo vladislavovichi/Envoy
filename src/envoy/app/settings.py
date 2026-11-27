@@ -1,5 +1,5 @@
 from math import isfinite
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     llm_daily_token_budget: int = Field(default=200_000, gt=0)
     inbound_max_text_length: int = Field(default=2000, gt=0)
     inbound_rate_per_minute: int = Field(default=20, gt=0)
+    owner_view: Literal["text", "widget"] = "text"
+    widget_topic_links: Literal["direct", "request"] = "request"
+    summary_hour: int = Field(default=20, ge=0, le=23)
 
     @field_validator("owner_ids", mode="before")
     @classmethod

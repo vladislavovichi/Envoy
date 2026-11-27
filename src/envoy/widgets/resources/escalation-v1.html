@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{color-scheme:light dark}
+body{margin:0;padding:10px 12px;font:var(--tg-text-font-size,14px)/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--tg-theme-text-color,#000);background:var(--tg-theme-bg-color,#fff);overflow-wrap:anywhere}
+h1{font-size:1em;margin:0 0 6px}
+.i{padding:4px 0;border-top:1px solid var(--tg-theme-section-separator-color,#e7e7ea)}
+.n{color:var(--tg-theme-hint-color,#707579);margin-right:6px}
+.t{margin:8px 0;font-variant-numeric:tabular-nums;color:var(--tg-theme-hint-color,#707579)}
+.b{display:flex;gap:8px}
+button{flex:1;min-height:var(--tg-button-height,40px);border:0;border-radius:var(--tg-button-radius,10px);font:inherit;font-weight:600;color:var(--tg-theme-button-text-color,#fff);background:var(--tg-theme-button-color,#3390ec)}
+button.no{background:var(--tg-theme-secondary-bg-color,#f1f1f4);color:var(--tg-theme-destructive-text-color,#e53935)}
+button:disabled{opacity:var(--tg-button-disabled-opacity,.5)}
+.m{margin-top:8px;min-height:1.35em;font-size:.9em}
+</style>
+</head>
+<body>
+<h1>Нужно ваше решение</h1>
+<div id="issues"></div>
+<div class="t" id="timer"></div>
+<div class="b"><button id="a" type="button">Принять</button><button id="d" class="no" type="button">Отклонить</button></div>
+<div class="m" id="msg"></div>
+<script>
+(function(){
+var W=window.TelegramWidget,R=-1,D=null,busy=false,ticks=0,unlock=0;
+var O={approved:"Одобрено",declined:"Отклонено",timeout:"Время истекло — отклонено"};
+var A={ok:"Решение принято, обновляю карточку…",stale:"Решение уже не требуется",expired:"Время на решение истекло",no:"Действие недоступно",wait:"Решение обрабатывается…",error:"Не удалось обработать, попробуйте ещё раз"};
+var E={BUSY:"Подождите ответа на прошлое нажатие",TIMEOUT:"Бот не ответил вовремя, попробуйте ещё раз",RATE_LIMITED:"Слишком часто, подождите",NOT_ALLOWED:"Действие недоступно здесь"};
+function $(i){return document.getElementById(i)}
+function clock(){return typeof Date==="function"&&typeof Date.now==="function"}
+function left(){
+if(!D||D.outcome!=="pending")return 0;
+if(clock()){var e=Date.parse(D.expires_at);if(e===e)return Math.max(0,Math.floor((e-Date.now())/1000))}
+return Math.max(0,(D.remaining|0)-ticks)}
+function msg(x){$("msg").textContent=x||""}
+function sync(){
+var s=left(),open=!!D&&D.outcome==="pending"&&s>0;
+$("a").disabled=$("d").disabled=busy||!open;
+var t=$("timer");
+if(!D)t.textContent="";
+else if(D.outcome!=="pending")t.textContent="Итог: "+(O[D.outcome]||D.outcome);
+else if(s>0)t.textContent="Осталось "+Math.floor(s/60)+":"+("0"+s%60).slice(-2);
+else t.textContent="Время истекло, ждём итог";
+}
+function draw(){
+var d;try{d=JSON.parse(W.chatData||"null")}catch(e){return}
+if(!d||typeof d.r!=="number"||d.r<R)return;R=d.r;D=d;ticks=0;
+var box=$("issues");box.textContent="";
+(d.issues||[]).forEach(function(x){
+var r=document.createElement("div"),n=document.createElement("span"),v=document.createElement("span");
+r.className="i";n.className="n";n.textContent=String(x.name);v.textContent=x.ours==null?"—":String(x.ours);
+r.appendChild(n);r.appendChild(v);box.appendChild(r)});
+if(d.outcome!=="pending"){busy=false;msg("")}
+sync()}
+function send(k){
+if(busy||!D||D.outcome!=="pending"||left()<=0)return;
+busy=true;sync();msg("Отправляю…");
+var keep=function(){unlock=setTimeout(function(){busy=false;sync()},15000)};
+try{W.request(k+":"+D.cause).then(function(a){
+var r=a&&a.result;msg(A[r]||"");
+if(r==="ok"||r==="wait")keep();else busy=false;sync()},function(e){
+busy=false;msg(E[e&&e.code]||"Не удалось отправить");sync()})}
+catch(e){busy=false;msg("Не удалось отправить");sync()}}
+$("a").onclick=function(){send("a")};
+$("d").onclick=function(){send("d")};
+setInterval(function(){ticks++;sync()},1000);
+W.onEvent("chatDataChanged",function(){draw();if(D&&D.outcome!=="pending")clearTimeout(unlock)});draw();if(W.ready)W.ready();
+})();
+</script>
+</body>
+</html>

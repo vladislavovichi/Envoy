@@ -60,8 +60,10 @@ def _matcher(fragment: str):
     return lambda data: fragment in str(json.loads(data).get("message", ""))
 
 
-async def run_attack(attack: Attack, model: LanguageModel | None = None) -> Report:
-    harness: Harness = build_harness(model=model)
+async def run_attack(
+    attack: Attack, model: LanguageModel | None = None, owner_view: str = "text"
+) -> Report:
+    harness: Harness = build_harness(model=model, owner_view=owner_view)
     for reply in attack.llm_script:
         harness.llm.add(_matcher(reply.match), reply.intent)
     with capture_logs() as logs:
@@ -84,7 +86,9 @@ async def run_attack(attack: Attack, model: LanguageModel | None = None) -> Repo
     events = await harness.events()
     return Report(
         outbound=harness.to_counterpart(),
-        owner=harness.to_owner(),
+        owner=harness.to_owner()
+        + [record.caption for record in harness.transport.widgets.values()]
+        + [state for states in harness.transport.widget_states.values() for state in states],
         logs=list(logs),
         journal_view=fold(events),
         events=events,

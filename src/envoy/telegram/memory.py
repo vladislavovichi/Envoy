@@ -1,9 +1,10 @@
 import asyncio
 from collections.abc import AsyncIterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime
 
 from envoy.domain.telegram import ReplyMarkup, SentMessage, SurfaceCapabilities, Update
-from envoy.telegram.ports import TopicUnavailable
+from envoy.telegram.ports import TopicUnavailable, WidgetRejected
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,17 @@ class ChecklistRecord:
     items: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class WidgetRecord:
+    message: SentMessage
+    html: str
+    state: str
+    caption: str
+    thread_id: int | None
+    allow_queries: bool
+    reply_markup: ReplyMarkup | None
+
+
 class FakeTransport:
     capabilities = SurfaceCapabilities(private_context=True, ephemeral=False, checklist_native=True)
 
@@ -33,6 +45,11 @@ class FakeTransport:
         self.callback_answers: list[tuple[str, str | None]] = []
         self.incoming: asyncio.Queue[Update] = asyncio.Queue()
         self.topics_available = topics_available
+        self.widgets: dict[int, WidgetRecord] = {}
+        self.widget_edits: list[tuple[int, int, str]] = []
+        self.widget_answers: list[tuple[str, str]] = []
+        self.widget_states: dict[int, list[str]] = {}
+        self.widgets_available = True
         self._username = username
 
     def _next_message(self, chat_id: int, text: str) -> SentMessage:
@@ -71,6 +88,39 @@ class FakeTransport:
 
     async def answer_callback(self, callback_id: str, text: str | None = None) -> None:
         self.callback_answers.append((callback_id, text))
+
+    async def send_widget(
+        self,
+        chat_id: int,
+        html: str,
+        state: str,
+        caption: str,
+        *,
+        thread_id: int | None,
+        allow_queries: bool,
+        reply_markup: ReplyMarkup | None = None,
+    ) -> int:
+        if not self.widgets_available or len(state.encode()) > 1024 or len(caption) > 1024:
+            raise WidgetRejected("Widget rejected")
+        message = self._next_message(chat_id, caption)
+        self.widgets[message.message_id] = WidgetRecord(
+            message, html, state, caption, thread_id, allow_queries, reply_markup
+        )
+        self.widget_states[message.message_id] = [state]
+        return message.message_id
+
+    async def edit_widget(self, chat_id: int, message_id: int, state: str) -> None:
+        record = self.widgets.get(message_id)
+        if record is None or record.message.chat_id != chat_id or len(state.encode()) > 1024:
+            raise WidgetRejected("Widget edit rejected")
+        if record.state == state:
+            return
+        self.widgets[message_id] = replace(record, state=state)
+        self.widget_edits.append((chat_id, message_id, state))
+        self.widget_states[message_id].append(state)
+
+    async def answer_widget(self, query_id: str, data: str, *, deadline: datetime) -> None:
+        self.widget_answers.append((query_id, data))
 
     async def bot_username(self) -> str:
         return self._username

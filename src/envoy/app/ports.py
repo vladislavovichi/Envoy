@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from types import MappingProxyType
 from typing import Literal, Protocol
 
@@ -8,9 +8,34 @@ from pydantic import JsonValue
 
 from envoy.domain.ids import MandateId, OwnerId, SessionId
 from envoy.domain.telegram import BusinessConnection
+from envoy.security.widget_projection import SummaryRow
 
 type LedgerStatus = Literal["new", "in_progress", "done"]
 type JobKind = Literal["escalation_timeout", "session_deadline", "commitment_reminder"]
+
+
+@dataclass(frozen=True)
+class WidgetRef:
+    chat_id: int
+    message_id: int
+    version: int
+    revision: int
+
+
+@dataclass(frozen=True)
+class OwnerTarget:
+    owner_id: OwnerId
+    user_id: int
+    chat_id: int
+    thread_id: int | None
+
+
+@dataclass(frozen=True)
+class SummaryWidgetRef:
+    target: OwnerTarget
+    day: date
+    ref: WidgetRef
+    rows: tuple[SummaryRow, ...]
 
 
 @dataclass(frozen=True)
@@ -25,6 +50,7 @@ class SessionRecord:
     deadline: datetime
     closed_at: datetime | None = None
     agreed_at: datetime | None = None
+    dashboard_widget: WidgetRef | None = None
 
 
 class SessionRepository(Protocol):
@@ -35,6 +61,22 @@ class SessionRepository(Protocol):
     async def mark_closed(self, id: SessionId, at: datetime) -> None: ...
     async def mark_agreed(self, id: SessionId, at: datetime) -> None: ...
     async def count_agreed_since(self, owner: OwnerId, since: datetime) -> int: ...
+    async def set_dashboard_widget(self, session: SessionId, ref: WidgetRef) -> None: ...
+
+
+class OwnerViewStore(Protocol):
+    async def put_escalation(self, session: SessionId, cause: int, ref: WidgetRef) -> None: ...
+    async def get_escalation(self, session: SessionId, cause: int) -> WidgetRef | None: ...
+    async def find_escalation(
+        self, chat_id: int, message_id: int
+    ) -> tuple[SessionId, int] | None: ...
+    async def put_summary(self, summary: SummaryWidgetRef) -> None: ...
+    async def get_summary(self, owner: OwnerId, day: date) -> SummaryWidgetRef | None: ...
+    async def find_summary(self, chat_id: int, message_id: int) -> SummaryWidgetRef | None: ...
+    async def summary_delivered(self, owner: OwnerId, day: date) -> bool: ...
+    async def mark_summary_delivered(self, owner: OwnerId, day: date) -> None: ...
+    async def summary_topic(self, owner: OwnerId) -> int | None: ...
+    async def set_summary_topic(self, owner: OwnerId, thread_id: int) -> None: ...
 
 
 class BusinessConnectionRepository(Protocol):

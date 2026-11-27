@@ -1,5 +1,5 @@
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import cast
 from uuid import UUID
@@ -11,13 +11,16 @@ from envoy.app.application import Application
 from envoy.app.journal import SessionJournal
 from envoy.app.memory import (
     InMemoryBusinessConnectionRepository,
+    InMemoryOwnerViewStore,
     InMemoryScheduler,
     InMemorySessionRepository,
     InMemoryUpdateLedger,
 )
+from envoy.app.owner_view import OwnerView, TextOwnerView
 from envoy.app.pipeline import PipelineConfig, Stores, TelegramSurface, assemble_pipeline
 from envoy.app.ports import (
     BusinessConnectionRepository,
+    OwnerViewStore,
     Scheduler,
     SessionRepository,
     UpdateLedger,
@@ -41,6 +44,7 @@ from envoy.mandate.ports import InMemoryMandateStore, MandateStore
 from envoy.observability.logging import configure_logging
 from envoy.persistence.journal_store import PgJournalStore
 from envoy.persistence.key_vault import PgKeyVault
+from envoy.persistence.owner_views import PgOwnerViewStore
 from envoy.persistence.state_stores import (
     PgBusinessConnectionRepository,
     PgMandateStore,
@@ -55,8 +59,9 @@ from envoy.ports.registry import Registry
 from envoy.ports.rng import Rng, SeededRng, SystemRng
 from envoy.telegram.adapter import AiogramAdapter
 from envoy.telegram.memory import FakeTransport
-from envoy.telegram.outbound import OutboundQueue
-from envoy.telegram.ports import MessageSender, UpdateSource
+from envoy.telegram.outbound import OutboundQueue, QueuedWidgetTransport
+from envoy.telegram.ports import MessageSender, UpdateSource, WidgetTransport
+from envoy.widgets.owner_view import WidgetOwnerView
 
 type Resources = list[Callable[[], Awaitable[None]]]
 
@@ -72,6 +77,7 @@ class Storage:
     ledger: UpdateLedger
     scheduler: Scheduler
     usage: UsageLedger
+    owner_views: OwnerViewStore
 
 
 @dataclass(frozen=True)
@@ -84,6 +90,8 @@ class ApplicationRegistries:
     clocks: Registry[Clock]
     rngs: Registry[Rng]
     ids: Registry[IdGenerator]
+    widgets: Registry[WidgetTransport] = field(default_factory=Registry[WidgetTransport])
+    owner_views: Registry[OwnerView] = field(default_factory=Registry[OwnerView])
 
 
 class QueuedSender:
@@ -124,6 +132,7 @@ def _stores_registry() -> Registry[Storage]:
             InMemoryUpdateLedger(),
             InMemoryScheduler(),
             InMemoryUsageLedger(),
+            InMemoryOwnerViewStore(),
         )
 
     def postgres(
@@ -147,6 +156,7 @@ def _stores_registry() -> Registry[Storage]:
             PgUpdateLedger(sessions),
             PgScheduler(sessions),
             PgUsageLedger(sessions),
+            PgOwnerViewStore(sessions),
         )
 
     stores.register("memory", memory)
@@ -183,9 +193,11 @@ def default_registries() -> ApplicationRegistries:
     senders.register("aiogram", aiogram)
     sources = Registry[UpdateSource]()
     surfaces = Registry[TelegramSurface]()
+    widgets = Registry[WidgetTransport]()
     for name in ("fake", "aiogram"):
         sources.register(name, lambda sender: cast(UpdateSource, sender))
         surfaces.register(name, lambda sender: cast(TelegramSurface, sender))
+        widgets.register(name, lambda sender: cast(WidgetTransport, sender))
     clocks = Registry[Clock]()
     clocks.register("system", SystemClock)
     clocks.register("fixed", FixedClock)
@@ -196,8 +208,38 @@ def default_registries() -> ApplicationRegistries:
     ids.register("uuid7", UuidV7Generator)
     ids.register("sequential", SequentialIdGenerator)
     return ApplicationRegistries(
-        _stores_registry(), senders, sources, surfaces, _models_registry(), clocks, rngs, ids
+        _stores_registry(),
+        senders,
+        sources,
+        surfaces,
+        _models_registry(),
+        clocks,
+        rngs,
+        ids,
+        widgets,
+        _owner_views_registry(),
     )
+
+
+def _owner_views_registry() -> Registry[OwnerView]:
+    views = Registry[OwnerView]()
+
+    def text(text: TextOwnerView, **_: object) -> OwnerView:
+        return text
+
+    def widget(
+        text: TextOwnerView,
+        widgets: WidgetTransport,
+        sessions: SessionRepository,
+        store: OwnerViewStore,
+        clock: Clock,
+        settings: Settings,
+    ) -> OwnerView:
+        return WidgetOwnerView(widgets, text, sessions, store, clock, settings.widget_topic_links)
+
+    views.register("text", text)
+    views.register("widget", widget)
+    return views
 
 
 def build_application(
@@ -225,6 +267,13 @@ def build_application(
         raw_sender, settings.global_rate, settings.per_chat_rate, settings.max_retry_after, clock
     )
     sender = QueuedSender(queue)
+    widgets = (
+        QueuedWidgetTransport(
+            factories.widgets.create(settings.telegram_transport, sender=raw_sender), queue
+        )
+        if settings.owner_view == "widget"
+        else None
+    )
 
     def author(session: SessionId) -> JournalAuthor:
         return JournalAuthor(
@@ -246,7 +295,20 @@ def build_application(
         ledger=storage.ledger,
         scheduler=storage.scheduler,
         usage=storage.usage,
+        owner_views=storage.owner_views,
     )
+
+    def owner_view(text: TextOwnerView) -> OwnerView:
+        return factories.owner_views.create(
+            settings.owner_view,
+            text=text,
+            widgets=widgets,
+            sessions=storage.sessions,
+            store=storage.owner_views,
+            clock=clock,
+            settings=settings,
+        )
+
     pipeline = assemble_pipeline(
         PipelineConfig(
             owner_ids=settings.owner_ids,
@@ -255,6 +317,7 @@ def build_application(
             inbound_max_text_length=settings.inbound_max_text_length,
             inbound_rate_per_minute=settings.inbound_rate_per_minute,
             llm_daily_token_budget=settings.llm_daily_token_budget,
+            summary_hour=settings.summary_hour,
         ),
         stores,
         sender,
@@ -263,9 +326,18 @@ def build_application(
         signing_key,
         clock,
         rng,
+        owner_view,
+        widgets,
     )
     recovery = Recovery(stores.sessions, pipeline.processor, stores.scheduler, clock)
-    runtime = Runtime(source, pipeline.processor, stores.scheduler, recovery, clock)
+    runtime = Runtime(
+        source,
+        pipeline.processor,
+        stores.scheduler,
+        recovery,
+        clock,
+        daily_summary=pipeline.daily_summary,
+    )
 
     async def close() -> None:
         await queue.close()

@@ -1,9 +1,9 @@
-import asyncio
 from collections.abc import Hashable
 
 import structlog
 
 from envoy.app.execution_flow import ExecutionFlow
+from envoy.app.locks import SessionLocks, session_key
 from envoy.app.owner_flow import OwnerFlow
 from envoy.app.ports import (
     BusinessConnectionRepository,
@@ -13,6 +13,7 @@ from envoy.app.ports import (
     UpdateLedger,
 )
 from envoy.app.session_flow import SessionFlow
+from envoy.app.widget_queries import WidgetQueryFlow
 from envoy.app.window import ReplyWindow
 from envoy.domain.ids import owner_for_user
 from envoy.domain.telegram import (
@@ -21,8 +22,11 @@ from envoy.domain.telegram import (
     CallbackUpdate,
     MessageUpdate,
     Update,
+    WidgetQueryUpdate,
 )
 from envoy.security.inbound import Dropped, InboundFilter
+
+__all__ = ["SessionLocks", "UpdateProcessor"]
 
 logger = structlog.get_logger()
 
@@ -44,17 +48,6 @@ class ConfiguredOwnerDirectory:
         return connection.owner_user_id
 
 
-class SessionLocks:
-    def __init__(self) -> None:
-        self._locks: dict[Hashable, asyncio.Lock] = {}
-
-    def for_key(self, key: Hashable) -> asyncio.Lock:
-        lock = self._locks.get(key)
-        if lock is None:
-            lock = self._locks[key] = asyncio.Lock()
-        return lock
-
-
 class UpdateProcessor:
     def __init__(
         self,
@@ -67,6 +60,7 @@ class UpdateProcessor:
         sessions: SessionRepository,
         window: ReplyWindow,
         locks: SessionLocks,
+        widgets: WidgetQueryFlow | None = None,
     ) -> None:
         self._ledger = ledger
         self._inbound = inbound
@@ -77,6 +71,7 @@ class UpdateProcessor:
         self._sessions = sessions
         self._window = window
         self._locks = locks
+        self._widgets = widgets
 
     async def process(self, update: Update) -> None:
         if await self._ledger.begin(update.update_id) == "done":
@@ -84,6 +79,8 @@ class UpdateProcessor:
         result = await self._inbound.check(update)
         if isinstance(result, Dropped):
             logger.info("update_dropped", update_id=update.update_id, reason=result.reason)
+            if isinstance(update, WidgetQueryUpdate) and self._widgets is not None:
+                await self._widgets.reject(update)
             await self._ledger.complete(update.update_id)
             return
         await self._dispatch(result.update, result.sender)
@@ -111,6 +108,9 @@ class UpdateProcessor:
                         await self._sessions_flow.on_callback(update)
             case BusinessMessageUpdate():
                 await self._business(update, sender)
+            case WidgetQueryUpdate():
+                if self._widgets is not None:
+                    await self._widgets.handle(update)
 
     async def _business(self, update: BusinessMessageUpdate, sender: str) -> None:
         key = (update.connection_id, update.chat_id)
@@ -125,17 +125,19 @@ class UpdateProcessor:
                 return
             if update.done_task_ids:
                 await self._execution.on_tasks_done(record, update)
+                await self._sessions_flow.present(record)
             else:
                 await self._sessions_flow.on_counterpart(record, update)
 
     @staticmethod
     def _chat_key(record: SessionRecord) -> Hashable:
-        return (record.connection_id, record.counterpart_chat_id)
+        return session_key(record)
 
     async def resume(self, record: SessionRecord) -> None:
         async with self._locks.for_key(self._chat_key(record)):
             await self._sessions_flow.ensure_jobs(record)
             await self._sessions_flow.flush_undelivered(record)
+            await self._sessions_flow.present(record)
 
     async def run_job(self, job: Job) -> None:
         record = await self._sessions.get(job.session)

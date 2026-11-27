@@ -67,6 +67,10 @@ class SessionRow(Base):
     deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     agreed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dashboard_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    dashboard_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    dashboard_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    dashboard_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     __table_args__ = (Index("ix_sessions_chat", "connection_id", "counterpart_chat_id"),)
 
 
@@ -106,3 +110,42 @@ class LlmUsageRow(Base):
     __tablename__ = "llm_usage"
     day: Mapped[date] = mapped_column(Date, primary_key=True)
     tokens: Mapped[int] = mapped_column(BigInteger)
+
+
+class EscalationWidgetRow(Base):
+    __tablename__ = "escalation_widgets"
+    session_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    cause: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    message_id: Mapped[int] = mapped_column(BigInteger)
+    version: Mapped[int] = mapped_column(Integer)
+    revision: Mapped[int] = mapped_column(Integer)
+    __table_args__ = (
+        UniqueConstraint("chat_id", "message_id", name="uq_escalation_widgets_message"),
+    )
+
+
+class SummaryWidgetRow(Base):
+    __tablename__ = "summary_widgets"
+    owner_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    thread_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    message_id: Mapped[int] = mapped_column(BigInteger)
+    version: Mapped[int] = mapped_column(Integer)
+    revision: Mapped[int] = mapped_column(Integer)
+    rows: Mapped[list[Any]] = mapped_column(JSON)
+    __table_args__ = (UniqueConstraint("chat_id", "message_id", name="uq_summary_widgets_message"),)
+
+
+class OwnerSummaryRow(Base):
+    __tablename__ = "owner_summaries"
+    owner_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+
+
+class OwnerSummaryTopicRow(Base):
+    __tablename__ = "owner_summary_topics"
+    owner_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    thread_id: Mapped[int] = mapped_column(BigInteger)

@@ -37,6 +37,12 @@ source_modules =
     envoy.app.pipeline
     envoy.app.recovery
     envoy.app.runtime
+    envoy.app.owner_view
+    envoy.app.escalation
+    envoy.app.widget_queries
+    envoy.app.daily_summary
+    envoy.app.locks
+    envoy.widgets
     envoy.telegram.outbound
     envoy.telegram.ports
     envoy.telegram.dependencies

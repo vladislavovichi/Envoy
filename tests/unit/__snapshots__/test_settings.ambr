@@ -17,13 +17,16 @@
     'master_key',
     'max_retry_after',
     'owner_ids',
+    'owner_view',
     'per_chat_rate',
     'postgres_db',
     'postgres_password',
     'postgres_port',
     'postgres_user',
+    'summary_hour',
     'telegram_api_base',
     'telegram_transport',
     'test_database_url',
+    'widget_topic_links',
   ])
 # ---

@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Any
 
 from envoy.domain.telegram import (
@@ -10,6 +11,7 @@ from envoy.domain.telegram import (
     TextEntity,
     UnsupportedUpdate,
     Update,
+    WidgetQueryUpdate,
 )
 
 ALLOWED_UPDATES = (
@@ -18,6 +20,7 @@ ALLOWED_UPDATES = (
     "business_connection",
     "business_message",
     "edited_business_message",
+    "widget_query",
 )
 SENSITIVE_ENTITIES = frozenset({"bank_card_number", "ton_address"})
 SERVICE_FIELDS = frozenset(
@@ -68,7 +71,22 @@ def _message_fields(message: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _map(raw: dict[str, Any]) -> Update:
+def _widget_query(update_id: int, query: dict[str, Any], received_at: datetime) -> Update:
+    chat = query.get("chat") or {}
+    kind = query.get("type") or {}
+    data = query.get("data")
+    return WidgetQueryUpdate(
+        update_id=update_id,
+        query_id=str(query["id"]),
+        user_id=int(query["from"]["id"]),
+        chat_id=int(chat["id"]) if "id" in chat else None,
+        message_id=int(query["message_id"]) if "message_id" in query else None,
+        data=data if kind.get("type") == "data" and isinstance(data, str) else None,
+        received_at=received_at,
+    )
+
+
+def _map(raw: dict[str, Any], received_at: datetime) -> Update:
     update_id = int(raw["update_id"])
     if isinstance(raw.get("message"), dict):
         return MessageUpdate(update_id=update_id, **_message_fields(raw["message"]))
@@ -95,6 +113,9 @@ def _map(raw: dict[str, Any]) -> Update:
             message_id=int(message["message_id"]) if "message_id" in message else None,
             data=str(callback.get("data", "")),
         )
+    query = raw.get("widget_query")
+    if isinstance(query, dict):
+        return _widget_query(update_id, query, received_at)
     connection = raw.get("business_connection")
     if isinstance(connection, dict):
         rights = connection.get("rights") or {}
@@ -111,8 +132,8 @@ def _map(raw: dict[str, Any]) -> Update:
     return UnsupportedUpdate(update_id)
 
 
-def map_update(raw: dict[str, Any]) -> Update:
+def map_update(raw: dict[str, Any], received_at: datetime | None = None) -> Update:
     try:
-        return _map(raw)
+        return _map(raw, received_at or datetime.now(UTC))
     except KeyError, TypeError, ValueError, AttributeError:
         return UnsupportedUpdate(int(raw.get("update_id", 0)))

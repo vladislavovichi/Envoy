@@ -4,9 +4,11 @@ from uuid import UUID, uuid5
 
 import structlog
 
+from envoy.app.escalation import Choice, EscalationResolver, parse_cause
 from envoy.app.execution_flow import ExecutionFlow
+from envoy.app.owner_view import OwnerPresenter
 from envoy.app.ports import BusinessConnectionRepository, Job, SessionRecord
-from envoy.app.renderer import CardRenderer, MessageRenderer
+from envoy.app.renderer import MessageRenderer
 from envoy.app.steps import SessionContext, SessionSteps
 from envoy.domain.events import (
     Decided,
@@ -30,12 +32,7 @@ from envoy.llm.translator import IssueDescriptor, TranslationFailed, Translator
 from envoy.llm.validation import validate_intent
 from envoy.mandate.compiler import CompiledMandate
 from envoy.security.authorizer import Action, Allow, Deny, Escalate
-from envoy.security.projection import (
-    ClarificationProjection,
-    OfferProjection,
-    OwnerCard,
-    OwnerCardProjection,
-)
+from envoy.security.projection import ClarificationProjection, OfferProjection
 from envoy.telegram.links import topic_link
 from envoy.telegram.ports import (
     BotIdentity,
@@ -51,6 +48,10 @@ UNCLEAR_LIMIT = 3
 CLOSING_REASONS = {"escalation_timeout", "session_deadline"}
 
 type EngineFactory = Callable[[CompiledMandate], NegotiationEngine]
+
+
+def _closed(ctx: SessionContext) -> bool:
+    return ctx.view.state is SessionState.CLOSED
 
 
 def session_id_for(connection_id: str, chat_id: int, cause: int) -> SessionId:
@@ -69,7 +70,7 @@ class SessionFlow:
         answerer: CallbackAnswerer,
         identity: BotIdentity,
         messages: MessageRenderer,
-        cards: CardRenderer,
+        presenter: OwnerPresenter,
         timezone: str,
         agent_name: str,
     ) -> None:
@@ -82,7 +83,8 @@ class SessionFlow:
         self._answerer = answerer
         self._identity = identity
         self._messages = messages
-        self._cards = cards
+        self._presenter = presenter
+        self.resolver = EscalationResolver(steps, self)
         self._timezone = timezone
         self._agent_name = agent_name
 
@@ -151,7 +153,11 @@ class SessionFlow:
                 await self._act(ctx, cause, Action("send_offer", decision.offer))
         for pending in list(ctx.view.undelivered):
             await self._deliver(ctx, pending)
+        await self._presenter.refresh(ctx)
         return record.id
+
+    async def present(self, record: SessionRecord) -> None:
+        await self._presenter.refresh(await self._steps.load(record))
 
     @staticmethod
     def _deadline_job(record: SessionRecord) -> Job:
@@ -262,11 +268,6 @@ class SessionFlow:
         await self._steps.append(
             ctx, Escalated(cause=decided.cause, reason="confirm_action", expires_at=expires)
         )
-        card = self._cards.escalation(
-            OwnerCardProjection().project(OwnerCard(decided.offer, "confirm_action")),
-            decided.cause,
-        )
-        await self._steps.notify_owner(ctx.record, card.text, card.markup())
         await self._steps.scheduler.schedule(
             self._escalation_job(ctx.record, decided.cause, expires)
         )
@@ -330,6 +331,9 @@ class SessionFlow:
         ctx = await self._steps.load(record)
         if ctx.view.state in (SessionState.INIT, SessionState.CLOSED):
             return
+        await self.recover_resolution(ctx)
+        if _closed(ctx):
+            return
         if not ctx.view.disclosed:
             if not await self._disclose(ctx, 0):
                 return
@@ -339,7 +343,19 @@ class SessionFlow:
             if not ctx.view.undelivered:
                 await self._execution.open(ctx, ctx.view.last_decision.cause)
 
+    async def recover_resolution(self, ctx: SessionContext) -> None:
+        for event in reversed(ctx.events):
+            if isinstance(event, Decided):
+                return
+            if isinstance(event, OwnerResolved):
+                await self.proceed(ctx, event.cause, -event.cause)
+                return
+
     async def on_counterpart(self, record: SessionRecord, update: BusinessMessageUpdate) -> None:
+        await self._on_counterpart(record, update)
+        await self.present(record)
+
+    async def _on_counterpart(self, record: SessionRecord, update: BusinessMessageUpdate) -> None:
         await self.flush_undelivered(record)
         ctx = await self._steps.load(record)
         if ctx.view.state is not SessionState.NEGOTIATING or not ctx.view.disclosed:
@@ -416,6 +432,7 @@ class SessionFlow:
                 ctx = await self._steps.load(record)
                 await self._steps.close(ctx, Outcome.rejected, "owner_stopped")
                 await self._steps.notify_owner(record, "Сессия остановлена по вашей команде.")
+                await self._presenter.refresh(ctx)
 
     async def _find_pending(self, cause: int) -> SessionContext | None:
         for record in await self._steps.sessions.list_active():
@@ -424,44 +441,73 @@ class SessionFlow:
                 return ctx
         return None
 
-    async def resolve(self, ctx: SessionContext, resolution: Resolution, cause: int) -> None:
+    async def record_resolution(self, ctx: SessionContext, resolution: Resolution) -> int | None:
         pending = ctx.view.pending
         if pending is None:
-            return
+            return None
         await self._steps.append(ctx, OwnerResolved(cause=pending.cause, resolution=resolution))
-        if resolution == "approved" and pending.kind is not None:
-            approved = frozenset() if pending.offer is None else frozenset({pending.offer.hash()})
-            await self._act(ctx, cause, Action(pending.kind, pending.offer), approved)
+        return pending.cause
+
+    async def proceed(self, ctx: SessionContext, cause: int, trigger: int) -> None:
+        resolved = ctx.find(OwnerResolved, cause)
+        if resolved is None or ctx.view.state is SessionState.CLOSED:
             return
-        reason = "escalation_timeout" if resolution == "timeout" else "owner_declined"
-        await self._act(ctx, cause, Action("reject_session", reason=reason))
-        if ctx.view.state is not SessionState.CLOSED:
-            outcome = Outcome.expired if resolution == "timeout" else Outcome.rejected
+        decided = ctx.find(Decided, cause)
+        if resolved.resolution == "approved" and decided is not None:
+            approved = frozenset() if decided.offer is None else frozenset({decided.offer.hash()})
+            await self._act(ctx, trigger, Action(decided.kind, decided.offer), approved)
+            return
+        reason = "escalation_timeout" if resolved.resolution == "timeout" else "owner_declined"
+        await self._act(ctx, trigger, Action("reject_session", reason=reason))
+        if not _closed(ctx):
+            outcome = Outcome.expired if resolved.resolution == "timeout" else Outcome.rejected
             await self._steps.close(ctx, outcome, reason)
 
-    async def callback_session(self, update: CallbackUpdate) -> SessionRecord | None:
-        _, _, raw = update.data.partition(":")
-        if not raw.lstrip("-").isdigit():
+    async def resolve(self, ctx: SessionContext, resolution: Resolution, trigger: int) -> None:
+        cause = await self.record_resolution(ctx, resolution)
+        if cause is not None:
+            await self.proceed(ctx, cause, trigger)
+
+    @staticmethod
+    def callback_command(data: str) -> tuple[Choice, int] | None:
+        action, _, raw = data.partition(":")
+        cause = parse_cause(raw)
+        if cause is None:
             return None
-        ctx = await self._find_pending(int(raw))
+        if action == "approve":
+            return "approve", cause
+        if action == "decline":
+            return "decline", cause
+        return None
+
+    async def callback_session(self, update: CallbackUpdate) -> SessionRecord | None:
+        command = self.callback_command(update.data)
+        if command is None:
+            return None
+        ctx = await self._find_pending(command[1])
         return None if ctx is None else ctx.record
 
     async def on_callback(self, update: CallbackUpdate) -> None:
-        action, _, raw = update.data.partition(":")
-        try:
-            cause = int(raw)
-        except ValueError:
+        command = self.callback_command(update.data)
+        if command is None:
             await self._answerer.answer_callback(update.callback_id, "Неизвестная команда")
             return
+        choice, cause = command
         ctx = await self._find_pending(cause)
-        if ctx is None or ctx.record.owner_id != owner_for_user(update.user_id):
+        if ctx is None:
             await self._answerer.answer_callback(update.callback_id, "Решение уже не требуется")
             return
-        resolution: Resolution = "approved" if action == "approve" else "declined"
-        await self.resolve(ctx, resolution, update.update_id)
-        await self._answerer.answer_callback(
-            update.callback_id, "Одобрено" if resolution == "approved" else "Отклонено"
+        result = await self.resolver.resolve(
+            ctx.record.id, update.user_id, cause, choice, trigger=update.update_id
         )
+        match result:
+            case "recorded":
+                text = "Одобрено" if choice == "approve" else "Отклонено"
+            case "expired":
+                text = "Время на решение истекло"
+            case _:
+                text = "Решение уже не требуется"
+        await self._answerer.answer_callback(update.callback_id, text)
 
     async def on_job(self, job: Job) -> None:
         record = await self._steps.sessions.get(job.session)
@@ -487,3 +533,4 @@ class SessionFlow:
             case "commitment_reminder":
                 await self._execution.on_reminder(ctx)
         await self._steps.scheduler.complete(job.key)
+        await self._presenter.refresh(ctx)

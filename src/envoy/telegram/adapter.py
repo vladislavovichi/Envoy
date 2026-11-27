@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator, Sequence
+from datetime import UTC, datetime
 from hmac import compare_digest
 from typing import Any, ClassVar
 
@@ -25,11 +26,16 @@ from envoy.domain.telegram import (
 )
 from envoy.telegram.mapping import ALLOWED_UPDATES, map_update
 from envoy.telegram.outbound import RetryAfter, TransientSendError, bounded_retry_wait
-from envoy.telegram.ports import SendRejected, TopicUnavailable
+from envoy.telegram.ports import QueryExpired, SendRejected, TopicUnavailable, WidgetRejected
+
+NOT_MODIFIED = "message is not modified"
+EXPIRED_QUERY_MARKERS = ("query is too old", "query id is invalid", "query_id_invalid")
 
 
 class BotApiError(SendRejected):
-    pass
+    def __init__(self, description: str = "") -> None:
+        self.description = description
+        super().__init__("Telegram rejected the request")
 
 
 class RawMethod(TelegramMethod[Any]):
@@ -63,8 +69,8 @@ class AiogramAdapter:
             raise RetryAfter(float(exc.retry_after)) from None
         except TelegramNetworkError, TelegramServerError:
             raise TransientSendError("Telegram transport temporarily unavailable") from None
-        except TelegramAPIError:
-            raise BotApiError("Telegram rejected the request") from None
+        except TelegramAPIError as exc:
+            raise BotApiError(str(exc.message)) from None
 
     @staticmethod
     def _markup(reply_markup: ReplyMarkup) -> dict[str, Any]:
@@ -132,6 +138,58 @@ class AiogramAdapter:
             params["text"] = text[:200]
         await self.call_raw("answerCallbackQuery", **params)
 
+    async def send_widget(
+        self,
+        chat_id: int,
+        html: str,
+        state: str,
+        caption: str,
+        *,
+        thread_id: int | None,
+        allow_queries: bool,
+        reply_markup: ReplyMarkup | None = None,
+    ) -> int:
+        params: dict[str, Any] = {
+            "chat_id": chat_id,
+            "html": html,
+            "chat_data": state,
+            "caption": caption,
+            "allow_queries": allow_queries,
+        }
+        if thread_id is not None:
+            params["message_thread_id"] = thread_id
+        if reply_markup is not None:
+            params["reply_markup"] = self._markup(reply_markup)
+        try:
+            response = await self.call_raw("sendWidget", **params)
+        except BotApiError as exc:
+            raise WidgetRejected(exc.description) from None
+        return int(response["message_id"])
+
+    async def edit_widget(self, chat_id: int, message_id: int, state: str) -> None:
+        try:
+            await self.call_raw(
+                "editMessageWidgetData", chat_id=chat_id, message_id=message_id, chat_data=state
+            )
+        except BotApiError as exc:
+            if NOT_MODIFIED in exc.description.lower():
+                return
+            raise WidgetRejected(exc.description) from None
+
+    async def answer_widget(self, query_id: str, data: str, *, deadline: datetime) -> None:
+        remaining = (deadline - datetime.now(UTC)).total_seconds()
+        if remaining <= 0:
+            raise QueryExpired("Widget query answer deadline passed")
+        try:
+            async with asyncio.timeout(remaining):
+                await self.call_raw("answerWidgetQuery", widget_query_id=query_id, data=data)
+        except TimeoutError:
+            raise QueryExpired("Widget query answer deadline passed") from None
+        except BotApiError as exc:
+            if any(marker in exc.description.lower() for marker in EXPIRED_QUERY_MARKERS):
+                raise QueryExpired("Widget query expired") from None
+            raise WidgetRejected(exc.description) from None
+
     async def bot_username(self) -> str:
         if self._username is None:
             response = await self.call_raw("getMe")
@@ -172,7 +230,12 @@ class AiogramAdapter:
                 yield self._map_update(raw)
 
     async def set_webhook(self, url: str, secret_token: str) -> None:
-        await self.call_raw("setWebhook", url=url, secret_token=secret_token)
+        await self.call_raw(
+            "setWebhook",
+            url=url,
+            secret_token=secret_token,
+            allowed_updates=list(ALLOWED_UPDATES),
+        )
 
     def webhook_app(self, secret_token: str) -> web.Application:
         if not secret_token:

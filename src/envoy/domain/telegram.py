@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from types import MappingProxyType
 from typing import ClassVar, Literal
 
@@ -91,6 +92,18 @@ class CallbackUpdate:
 
 
 @dataclass(frozen=True)
+class WidgetQueryUpdate:
+    kind: ClassVar[str] = "widget_query"
+    update_id: int
+    query_id: str
+    user_id: int
+    chat_id: int | None
+    message_id: int | None
+    data: str | None
+    received_at: datetime
+
+
+@dataclass(frozen=True)
 class UnsupportedUpdate:
     kind: ClassVar[str] = "unsupported"
     update_id: int
@@ -101,6 +114,7 @@ type Update = (
     | BusinessConnectionUpdate
     | BusinessMessageUpdate
     | CallbackUpdate
+    | WidgetQueryUpdate
     | UnsupportedUpdate
 )
 

@@ -1,7 +1,7 @@
 from dataclasses import replace
-from datetime import datetime
+from datetime import date, datetime
 
-from envoy.app.ports import Job, LedgerStatus, SessionRecord
+from envoy.app.ports import Job, LedgerStatus, SessionRecord, SummaryWidgetRef, WidgetRef
 from envoy.domain.ids import OwnerId, SessionId
 from envoy.domain.telegram import BusinessConnection
 
@@ -40,6 +40,9 @@ class InMemorySessionRepository:
         record = self._records[id]
         if record.agreed_at is None:
             self._records[id] = replace(record, agreed_at=at)
+
+    async def set_dashboard_widget(self, session: SessionId, ref: WidgetRef) -> None:
+        self._records[session] = replace(self._records[session], dashboard_widget=ref)
 
     async def count_agreed_since(self, owner: OwnerId, since: datetime) -> int:
         return sum(
@@ -113,3 +116,55 @@ class InMemoryScheduler:
             (job for job in self._jobs.values() if job.session == session),
             key=lambda job: (job.run_at, job.key),
         )
+
+
+class InMemoryOwnerViewStore:
+    def __init__(self) -> None:
+        self._escalations: dict[tuple[SessionId, int], WidgetRef] = {}
+        self._summaries: dict[tuple[OwnerId, date], SummaryWidgetRef] = {}
+        self._delivered: set[tuple[OwnerId, date]] = set()
+        self._topics: dict[OwnerId, int] = {}
+
+    def _message_taken(self, chat_id: int, message_id: int, key: object) -> bool:
+        for other, ref in self._escalations.items():
+            if other != key and (ref.chat_id, ref.message_id) == (chat_id, message_id):
+                return True
+        return False
+
+    async def put_escalation(self, session: SessionId, cause: int, ref: WidgetRef) -> None:
+        if self._message_taken(ref.chat_id, ref.message_id, (session, cause)):
+            raise ValueError("Message is already bound")
+        self._escalations[(session, cause)] = ref
+
+    async def get_escalation(self, session: SessionId, cause: int) -> WidgetRef | None:
+        return self._escalations.get((session, cause))
+
+    async def find_escalation(self, chat_id: int, message_id: int) -> tuple[SessionId, int] | None:
+        for key, ref in self._escalations.items():
+            if (ref.chat_id, ref.message_id) == (chat_id, message_id):
+                return key
+        return None
+
+    async def put_summary(self, summary: SummaryWidgetRef) -> None:
+        self._summaries[(summary.target.owner_id, summary.day)] = summary
+
+    async def get_summary(self, owner: OwnerId, day: date) -> SummaryWidgetRef | None:
+        return self._summaries.get((owner, day))
+
+    async def find_summary(self, chat_id: int, message_id: int) -> SummaryWidgetRef | None:
+        for summary in self._summaries.values():
+            if (summary.ref.chat_id, summary.ref.message_id) == (chat_id, message_id):
+                return summary
+        return None
+
+    async def summary_delivered(self, owner: OwnerId, day: date) -> bool:
+        return (owner, day) in self._delivered
+
+    async def mark_summary_delivered(self, owner: OwnerId, day: date) -> None:
+        self._delivered.add((owner, day))
+
+    async def summary_topic(self, owner: OwnerId) -> int | None:
+        return self._topics.get(owner)
+
+    async def set_summary_topic(self, owner: OwnerId, thread_id: int) -> None:
+        self._topics[owner] = thread_id

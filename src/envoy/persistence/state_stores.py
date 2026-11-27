@@ -8,7 +8,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from envoy.app.ports import Job, JobKind, LedgerStatus, SessionRecord
+from envoy.app.ports import Job, JobKind, LedgerStatus, SessionRecord, WidgetRef
 from envoy.crypto.aead import ContentCipher
 from envoy.domain.ids import MandateId, OwnerId, SessionId
 from envoy.domain.telegram import BusinessConnection
@@ -127,6 +127,23 @@ def _session(row: SessionRow) -> SessionRecord:
         deadline=row.deadline,
         closed_at=row.closed_at,
         agreed_at=row.agreed_at,
+        dashboard_widget=_dashboard(row),
+    )
+
+
+def _dashboard(row: SessionRow) -> WidgetRef | None:
+    if (
+        row.dashboard_chat_id is None
+        or row.dashboard_message_id is None
+        or row.dashboard_version is None
+        or row.dashboard_revision is None
+    ):
+        return None
+    return WidgetRef(
+        row.dashboard_chat_id,
+        row.dashboard_message_id,
+        row.dashboard_version,
+        row.dashboard_revision,
     )
 
 
@@ -188,6 +205,19 @@ class PgSessionRepository:
                 update(SessionRow)
                 .where(SessionRow.id == id, SessionRow.agreed_at.is_(None))
                 .values(agreed_at=at)
+            )
+
+    async def set_dashboard_widget(self, session: SessionId, ref: WidgetRef) -> None:
+        async with self._sessions.begin() as db:
+            await db.execute(
+                update(SessionRow)
+                .where(SessionRow.id == session)
+                .values(
+                    dashboard_chat_id=ref.chat_id,
+                    dashboard_message_id=ref.message_id,
+                    dashboard_version=ref.version,
+                    dashboard_revision=ref.revision,
+                )
             )
 
     async def count_agreed_since(self, owner: OwnerId, since: datetime) -> int:

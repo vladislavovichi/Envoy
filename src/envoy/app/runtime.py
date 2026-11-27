@@ -2,6 +2,7 @@ import asyncio
 
 import structlog
 
+from envoy.app.daily_summary import DailySummary
 from envoy.app.ports import Scheduler
 from envoy.app.processor import UpdateProcessor
 from envoy.app.recovery import Recovery
@@ -20,6 +21,7 @@ class Runtime:
         recovery: Recovery,
         clock: Clock,
         job_interval: float = 1.0,
+        daily_summary: DailySummary | None = None,
     ) -> None:
         self._source = source
         self._processor = processor
@@ -27,6 +29,7 @@ class Runtime:
         self._recovery = recovery
         self._clock = clock
         self._job_interval = job_interval
+        self._daily_summary = daily_summary
 
     async def run(self) -> None:
         await self._recovery.resume()
@@ -47,6 +50,11 @@ class Runtime:
                 await self._processor.run_job(job)
             except Exception:
                 logger.exception("job_failed", key=job.key)
+        if self._daily_summary is not None:
+            try:
+                await self._daily_summary.run_due(self._clock.now())
+            except Exception:
+                logger.exception("daily_summary_failed")
 
     async def _jobs(self) -> None:
         while True:

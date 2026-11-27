@@ -1,19 +1,26 @@
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Protocol
 
+from envoy.app.daily_summary import SUMMARY_HOUR, DailySummary
 from envoy.app.execution_flow import ExecutionFlow
 from envoy.app.journal import SessionJournal
+from envoy.app.locks import SessionLocks
+from envoy.app.memory import InMemoryOwnerViewStore
 from envoy.app.owner_flow import OwnerFlow
+from envoy.app.owner_view import OwnerPresenter, OwnerView, TextOwnerView
 from envoy.app.ports import (
     BusinessConnectionRepository,
+    OwnerViewStore,
     Scheduler,
     SessionRepository,
     UpdateLedger,
 )
-from envoy.app.processor import ConfiguredOwnerDirectory, SessionLocks, UpdateProcessor
+from envoy.app.processor import ConfiguredOwnerDirectory, UpdateProcessor
 from envoy.app.renderer import TemplateRenderer
 from envoy.app.session_flow import SessionFlow
 from envoy.app.steps import SessionSteps
+from envoy.app.widget_queries import WidgetQueryFlow
 from envoy.app.window import ReplyWindow
 from envoy.crypto.keys import SigningKey
 from envoy.engine.engine import NegotiationEngine
@@ -41,6 +48,7 @@ from envoy.telegram.ports import (
     ChecklistSender,
     MessageSender,
     TopicCreator,
+    WidgetTransport,
 )
 
 
@@ -56,6 +64,7 @@ class PipelineConfig:
     inbound_max_text_length: int = 2000
     inbound_rate_per_minute: int = 20
     llm_daily_token_budget: int = 200_000
+    summary_hour: int = SUMMARY_HOUR
 
 
 @dataclass(frozen=True)
@@ -67,6 +76,10 @@ class Stores:
     ledger: UpdateLedger
     scheduler: Scheduler
     usage: UsageLedger
+    owner_views: OwnerViewStore = field(default_factory=InMemoryOwnerViewStore)
+
+
+type OwnerViewFactory = Callable[[TextOwnerView], OwnerView]
 
 
 @dataclass(frozen=True)
@@ -79,6 +92,11 @@ class Pipeline:
     stores: Stores
     window: ReplyWindow
     authorizer: Authorizer
+    owner_view: OwnerView
+    text_view: TextOwnerView
+    presenter: OwnerPresenter
+    widget_queries: WidgetQueryFlow | None
+    daily_summary: DailySummary
 
 
 def default_authorizer() -> Authorizer:
@@ -100,6 +118,8 @@ def assemble_pipeline(
     signing_key: SigningKey,
     clock: Clock,
     rng: Rng,
+    owner_views: OwnerViewFactory | None = None,
+    widgets: WidgetTransport | None = None,
 ) -> Pipeline:
     renderer = TemplateRenderer(config.timezone)
     window = ReplyWindow(stores.connections, clock)
@@ -118,6 +138,9 @@ def assemble_pipeline(
         window,
     )
     execution = ExecutionFlow(steps, surface, renderer, config.timezone)
+    text_view = TextOwnerView(sender, renderer, stores.owner_views)
+    owner_view: OwnerView = text_view if owner_views is None else owner_views(text_view)
+    presenter = OwnerPresenter(owner_view, renderer)
     session_flow = SessionFlow(
         steps,
         stores.connections,
@@ -128,7 +151,7 @@ def assemble_pipeline(
         surface,
         surface,
         renderer,
-        renderer,
+        presenter,
         config.timezone,
         config.agent_name,
     )
@@ -149,6 +172,29 @@ def assemble_pipeline(
         config.inbound_max_text_length,
         config.inbound_rate_per_minute,
     )
+    daily_summary = DailySummary(
+        steps,
+        owner_view,
+        stores.owner_views,
+        surface,
+        surface,
+        config.timezone,
+        config.summary_hour,
+    )
+    locks = SessionLocks()
+    widget_queries = (
+        None
+        if widgets is None
+        else WidgetQueryFlow(
+            widgets,
+            stores.sessions,
+            stores.owner_views,
+            session_flow.resolver,
+            locks,
+            clock,
+            text_view,
+        )
+    )
     processor = UpdateProcessor(
         stores.ledger,
         inbound,
@@ -158,8 +204,21 @@ def assemble_pipeline(
         stores.connections,
         stores.sessions,
         window,
-        SessionLocks(),
+        locks,
+        widget_queries,
     )
     return Pipeline(
-        processor, session_flow, owner_flow, execution, steps, stores, window, authorizer
+        processor,
+        session_flow,
+        owner_flow,
+        execution,
+        steps,
+        stores,
+        window,
+        authorizer,
+        owner_view,
+        text_view,
+        presenter,
+        widget_queries,
+        daily_summary,
     )

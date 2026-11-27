@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{color-scheme:light dark}
+body{margin:0;padding:10px 12px;font:var(--tg-text-font-size,14px)/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--tg-theme-text-color,#000);background:var(--tg-theme-bg-color,#fff);overflow-wrap:anywhere}
+.h{display:flex;justify-content:space-between;gap:8px;align-items:baseline;font-weight:600}
+.st{font-weight:400;font-size:.86em;color:var(--tg-theme-hint-color,#707579);text-align:right}
+.row{display:grid;grid-template-columns:minmax(56px,30%) 1fr 1fr;gap:6px;padding:6px 0;border-top:1px solid var(--tg-theme-section-separator-color,#e7e7ea)}
+.row.hd{border:0;padding-bottom:0;font-size:.8em;color:var(--tg-theme-hint-color,#707579)}
+.n{color:var(--tg-theme-hint-color,#707579)}
+.eq{color:var(--tg-theme-accent-text-color,#168acd);font-weight:600}
+.bar{height:6px;border-radius:3px;background:var(--tg-theme-secondary-bg-color,#f1f1f4);margin-top:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--tg-theme-button-color,#3390ec)}
+.f{margin-top:8px;font-size:.86em;color:var(--tg-theme-hint-color,#707579)}
+[hidden]{display:none}
+</style>
+</head>
+<body>
+<div class="h"><span id="round"></span><span class="st" id="status"></span></div>
+<div class="row hd"><span></span><span>вы</span><span>они</span></div>
+<div id="issues"></div>
+<div class="f" id="prox" hidden><span id="pt"></span><div class="bar"><i id="pb"></i></div></div>
+<div class="f" id="ver" hidden></div>
+<script>
+(function(){
+var W=window.TelegramWidget,R=-1;
+var S={counterpart:"ждёт ответа собеседника",owner:"ждёт вашего решения",agreed:"согласовано",fulfilled:"встреча состоялась",rejected:"закрыто без сделки",expired:"закрыто по сроку"};
+function $(i){return document.getElementById(i)}
+function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;e.textContent=x==null?"—":String(x);return e}
+function draw(){
+var d;try{d=JSON.parse(W.chatData||"null")}catch(e){return}
+if(!d||typeof d.r!=="number"||d.r<R)return;R=d.r;
+$("round").textContent="Раунд "+d.round+" из "+d.max;
+$("status").textContent=S[d.status]||String(d.status);
+var box=$("issues");box.textContent="";
+(d.issues||[]).forEach(function(x){
+var r=document.createElement("div");r.className="row";
+var same=x.ours!=null&&x.ours===x.theirs;
+r.appendChild(el("span","n",x.name));r.appendChild(el("span",same?"eq":"",x.ours));r.appendChild(el("span",same?"eq":"",x.theirs));
+box.appendChild(r)});
+var p=typeof d.proximity==="number";$("prox").hidden=!p;
+if(p){$("pt").textContent="Совпадение условий: "+d.proximity+"%";$("pb").style.width=Math.max(0,Math.min(100,d.proximity))+"%"}
+var v=$("ver");v.hidden=typeof d.verified!=="boolean";
+v.textContent=d.verified?"Журнал проверен":"Проверка журнала не пройдена";
+}
+W.onEvent("chatDataChanged",draw);draw();if(W.ready)W.ready();
+})();
+</script>
+</body>
+</html>

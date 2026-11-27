@@ -25,6 +25,9 @@ REGISTRY = (
     TelegramDependency("answerGuestQuery", "10.0", "phase 2 guest surface"),
     TelegramDependency("refundStarPayment", "7.4", "phase 3 payments"),
     TelegramDependency("createForumTopic", "9.4", "phase 1 session topics in private chat"),
+    TelegramDependency("sendWidget", "10.4", "phase 1b owner widgets"),
+    TelegramDependency("editMessageWidgetData", "10.4", "phase 1b owner widget state"),
+    TelegramDependency("answerWidgetQuery", "10.4", "phase 1b owner widget queries"),
 )
 
 

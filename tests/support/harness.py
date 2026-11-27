@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from envoy.app.memory import (
     InMemoryBusinessConnectionRepository,
+    InMemoryOwnerViewStore,
     InMemoryScheduler,
     InMemorySessionRepository,
     InMemoryUpdateLedger,
@@ -20,6 +21,7 @@ from envoy.domain.telegram import (
     CallbackUpdate,
     MessageUpdate,
     TextEntity,
+    WidgetQueryUpdate,
 )
 from envoy.journal.memory import InMemoryJournalStore
 from envoy.llm.budget import InMemoryUsageLedger
@@ -31,6 +33,7 @@ from envoy.ports.clock import FixedClock
 from envoy.ports.ids import SequentialIdGenerator
 from envoy.ports.rng import SeededRng
 from envoy.telegram.memory import FakeTransport
+from envoy.widgets.owner_view import WidgetOwnerView
 from tests.support.journal import build_journal
 from tests.support.mandates import meeting_mandate
 from tests.support.sessions import T0
@@ -117,6 +120,28 @@ class Harness:
     async def private(self, text: str):
         return await self.feed(MessageUpdate(self.update_id(), OWNER_USER, OWNER_USER, text=text))
 
+    async def widget_query(
+        self, data: str | None, message_id: int, user_id: int = OWNER_USER, chat_id=None
+    ):
+        identity = self.update_id()
+        return await self.feed(
+            WidgetQueryUpdate(
+                identity,
+                f"wq{identity}",
+                user_id,
+                user_id if chat_id is None else chat_id,
+                message_id,
+                data,
+                self.clock.now(),
+            )
+        )
+
+    def widget_answers(self) -> list[str]:
+        return [data for _, data in self.transport.widget_answers]
+
+    def widgets_of(self, html_marker: str) -> list:
+        return [record for record in self.transport.widgets.values() if html_marker in record.html]
+
     async def callback(self, data: str, user_id: int = OWNER_USER):
         return await self.feed(
             CallbackUpdate(self.update_id(), f"cb{self.next_update}", user_id, OWNER_USER, 1, data)
@@ -161,6 +186,8 @@ def build_harness(
     owner_ids: frozenset[int] = frozenset({OWNER_USER}),
     budget: int = 1_000_000,
     model=None,
+    owner_view: str = "text",
+    links: str = "request",
 ) -> Harness:
     clock = FixedClock(T0)
     journal, store, key = build_journal(clock)
@@ -174,7 +201,12 @@ def build_harness(
         ledger=InMemoryUpdateLedger(),
         scheduler=InMemoryScheduler(),
         usage=InMemoryUsageLedger(),
+        owner_views=InMemoryOwnerViewStore(),
     )
+
+    def widget_view(text):
+        return WidgetOwnerView(transport, text, stores.sessions, stores.owner_views, clock, links)
+
     pipeline = assemble_pipeline(
         PipelineConfig(owner_ids=owner_ids, timezone="UTC", llm_daily_token_budget=budget),
         stores,
@@ -184,6 +216,8 @@ def build_harness(
         key,
         clock,
         SeededRng(9),
+        widget_view if owner_view == "widget" else None,
+        transport,
     )
     return Harness(pipeline, transport, llm, clock, store, key)
 

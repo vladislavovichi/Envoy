@@ -32,9 +32,10 @@ def test_ton_entity_offsets_point_at_the_secret() -> None:
     assert marked == "wallet-secret-77"
 
 
+@pytest.mark.parametrize("owner_view", ["text", "widget"])
 @pytest.mark.parametrize("attack", ATTACKS, ids=[attack.id for attack in ATTACKS])
-async def test_attack_holds(attack) -> None:
-    report = await run_attack(attack)
+async def test_attack_holds(attack, owner_view) -> None:
+    report = await run_attack(attack, owner_view=owner_view)
     assert violations(attack, report) == []
 
 

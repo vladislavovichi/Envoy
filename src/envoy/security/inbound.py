@@ -10,12 +10,13 @@ from envoy.domain.telegram import (
     MessageUpdate,
     UnsupportedUpdate,
     Update,
+    WidgetQueryUpdate,
 )
 from envoy.security.payment import redact_payment_details
 
 type SenderClass = Literal["owner", "counterpart", "owner_in_business_chat"]
 type DropReason = Literal[
-    "not_text", "too_long", "bot_sender", "rate_limited", "unknown_sender", "edited"
+    "not_text", "too_long", "bot_sender", "rate_limited", "unknown_sender", "edited", "wrong_chat"
 ]
 
 
@@ -65,6 +66,14 @@ class InboundFilter:
             case CallbackUpdate():
                 if not await self._owners.is_owner(update.user_id):
                     return Dropped("unknown_sender")
+                if not await self._admit(update.user_id):
+                    return Dropped("rate_limited")
+                return Passed(update, "owner")
+            case WidgetQueryUpdate():
+                if not await self._owners.is_owner(update.user_id):
+                    return Dropped("unknown_sender")
+                if update.chat_id != update.user_id:
+                    return Dropped("wrong_chat")
                 if not await self._admit(update.user_id):
                     return Dropped("rate_limited")
                 return Passed(update, "owner")
