@@ -1,7 +1,8 @@
 import asyncio
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
+from typing import Any
 
 from envoy.domain.telegram import ReplyMarkup, SentMessage, SurfaceCapabilities, Update
 from envoy.telegram.ports import TopicUnavailable, WidgetRejected
@@ -50,6 +51,9 @@ class FakeTransport:
         self.widget_answers: list[tuple[str, str]] = []
         self.widget_states: dict[int, list[str]] = {}
         self.widgets_available = True
+        self.descriptions: list[str] = []
+        self.guest_answers: list[tuple[str, dict[str, Any]]] = []
+        self.inline_answers: list[tuple[str, list[dict[str, Any]]]] = []
         self._username = username
 
     def _next_message(self, chat_id: int, text: str) -> SentMessage:
@@ -121,6 +125,15 @@ class FakeTransport:
 
     async def answer_widget(self, query_id: str, data: str, *, deadline: datetime) -> None:
         self.widget_answers.append((query_id, data))
+
+    async def answer_guest(self, query_id: str, result: Mapping[str, Any]) -> None:
+        self.guest_answers.append((query_id, dict(result)))
+
+    async def answer_inline(self, query_id: str, results: Sequence[Mapping[str, Any]]) -> None:
+        self.inline_answers.append((query_id, [dict(result) for result in results]))
+
+    async def set_description(self, text: str) -> None:
+        self.descriptions.append(text)
 
     async def bot_username(self) -> str:
         return self._username

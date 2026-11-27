@@ -6,3 +6,4 @@ from typing import Any
 class RecordedCall:
     method: str
     params: dict[str, Any]
+    token: str = ""

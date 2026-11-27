@@ -1,11 +1,23 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Protocol, cast
 
+from envoy.app.agent_flow import AgentFlow
+from envoy.app.agent_ports import DelegationSource, ProtocolRepository
 from envoy.app.daily_summary import SUMMARY_HOUR, DailySummary
 from envoy.app.execution_flow import ExecutionFlow
+from envoy.app.invitations import (
+    InMemoryInvitationRepository,
+    InvitationFlow,
+    InvitationRepository,
+)
 from envoy.app.journal import SessionJournal
 from envoy.app.locks import SessionLocks
+from envoy.app.mandate_widget import (
+    InMemoryMandateCardStore,
+    MandateCardStore,
+    MandateWidgetFlow,
+)
 from envoy.app.memory import InMemoryOwnerViewStore
 from envoy.app.owner_flow import OwnerFlow
 from envoy.app.owner_view import OwnerPresenter, OwnerView, TextOwnerView
@@ -33,6 +45,8 @@ from envoy.mandate.compiler import CompiledMandate
 from envoy.mandate.ports import MandateStore
 from envoy.ports.clock import Clock
 from envoy.ports.rng import Rng
+from envoy.protocol.delegation import KeyRegistry
+from envoy.protocol.limits import ProtocolLimits
 from envoy.security.authorizer import Authorizer
 from envoy.security.inbound import InboundFilter
 from envoy.security.rules import (
@@ -46,6 +60,7 @@ from envoy.telegram.ports import (
     BotIdentity,
     CallbackAnswerer,
     ChecklistSender,
+    InviteSurface,
     MessageSender,
     TopicCreator,
     WidgetTransport,
@@ -65,6 +80,7 @@ class PipelineConfig:
     inbound_rate_per_minute: int = 20
     llm_daily_token_budget: int = 200_000
     summary_hour: int = SUMMARY_HOUR
+    miniapp_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -77,9 +93,22 @@ class Stores:
     scheduler: Scheduler
     usage: UsageLedger
     owner_views: OwnerViewStore = field(default_factory=InMemoryOwnerViewStore)
+    invitations: InvitationRepository = field(default_factory=InMemoryInvitationRepository)
+    mandate_cards: MandateCardStore = field(default_factory=InMemoryMandateCardStore)
 
 
 type OwnerViewFactory = Callable[[TextOwnerView], OwnerView]
+
+
+@dataclass(frozen=True)
+class AgentWiring:
+    repo: ProtocolRepository
+    registry: KeyRegistry
+    delegations: DelegationSource
+    agent_key: SigningKey
+    bot_id: int
+    owner_user_id: int
+    limits: ProtocolLimits = field(default_factory=ProtocolLimits)
 
 
 @dataclass(frozen=True)
@@ -97,6 +126,10 @@ class Pipeline:
     presenter: OwnerPresenter
     widget_queries: WidgetQueryFlow | None
     daily_summary: DailySummary
+    agent_flow: AgentFlow | None = None
+    agent_factory: Callable[[int, int, MessageSender], AgentFlow] | None = None
+    invitations: InvitationFlow | None = None
+    mandate_widget: MandateWidgetFlow | None = None
 
 
 def default_authorizer() -> Authorizer:
@@ -120,6 +153,7 @@ def assemble_pipeline(
     rng: Rng,
     owner_views: OwnerViewFactory | None = None,
     widgets: WidgetTransport | None = None,
+    agent: AgentWiring | None = None,
 ) -> Pipeline:
     renderer = TemplateRenderer(config.timezone)
     window = ReplyWindow(stores.connections, clock)
@@ -182,6 +216,15 @@ def assemble_pipeline(
         config.summary_hour,
     )
     locks = SessionLocks()
+    mandate_widget = MandateWidgetFlow(
+        widgets,
+        stores.mandate_cards,
+        stores.mandates,
+        sender,
+        rng,
+        lambda value: renderer.value(value.isoformat()),
+        config.miniapp_url,
+    )
     widget_queries = (
         None
         if widgets is None
@@ -193,8 +236,41 @@ def assemble_pipeline(
             locks,
             clock,
             text_view,
+            mandate_widget,
         )
     )
+    invitations = InvitationFlow(
+        stores.invitations,
+        sender,
+        surface,
+        cast(InviteSurface, surface) if hasattr(surface, "answer_guest") else None,
+        clock,
+        rng,
+    )
+
+    def agent_factory(bot_id: int, owner_user: int, channel: MessageSender) -> AgentFlow:
+        assert agent is not None
+        return AgentFlow(
+            agent.repo,
+            agent.registry,
+            agent.delegations,
+            stores.mandates,
+            stores.journal,
+            channel,
+            authorizer,
+            default_engine,
+            clock,
+            rng,
+            agent.agent_key,
+            bot_id,
+            owner_user,
+            human_sessions=stores.sessions,
+            answerer=surface,
+            invitations=invitations,
+            limits=agent.limits,
+        )
+
+    agent_flow = None if agent is None else agent_factory(agent.bot_id, agent.owner_user_id, sender)
     processor = UpdateProcessor(
         stores.ledger,
         inbound,
@@ -206,6 +282,9 @@ def assemble_pipeline(
         window,
         locks,
         widget_queries,
+        agent_flow,
+        invitations,
+        mandate_widget,
     )
     return Pipeline(
         processor,
@@ -221,4 +300,8 @@ def assemble_pipeline(
         presenter,
         widget_queries,
         daily_summary,
+        agent_flow=agent_flow,
+        agent_factory=None if agent is None else agent_factory,
+        invitations=invitations,
+        mandate_widget=mandate_widget,
     )

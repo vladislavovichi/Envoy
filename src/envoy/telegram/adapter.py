@@ -1,5 +1,6 @@
 import asyncio
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from hmac import compare_digest
 from typing import Any, ClassVar
@@ -18,6 +19,7 @@ from aiohttp import web
 from tenacity import AsyncRetrying, retry_if_exception_type
 
 from envoy.domain.telegram import (
+    BotMessageUpdate,
     InlineButton,
     ReplyMarkup,
     SentMessage,
@@ -53,6 +55,7 @@ class AiogramAdapter:
         self._close_event = asyncio.Event()
         self._webhook_updates: asyncio.Queue[Update | None] | None = None
         self._username: str | None = None
+        self._bot_id: int | None = int(token.split(":", 1)[0]) if token[:1].isdigit() else None
 
     async def _poll_sleep(self, seconds: float) -> None:
         try:
@@ -190,11 +193,81 @@ class AiogramAdapter:
                 raise QueryExpired("Widget query expired") from None
             raise WidgetRejected(exc.description) from None
 
+    async def _me(self) -> None:
+        response = await self.call_raw("getMe")
+        self._username = str(response["username"])
+        self._bot_id = int(response["id"])
+
     async def bot_username(self) -> str:
         if self._username is None:
-            response = await self.call_raw("getMe")
-            self._username = str(response["username"])
+            await self._me()
+        assert self._username is not None
         return self._username
+
+    async def bot_id(self) -> int:
+        if self._bot_id is None:
+            await self._me()
+        assert self._bot_id is not None
+        return self._bot_id
+
+    async def answer_guest(self, query_id: str, result: Mapping[str, Any]) -> None:
+        await self.call_raw("answerGuestQuery", guest_query_id=query_id, result=dict(result))
+
+    async def answer_inline(self, query_id: str, results: Sequence[Mapping[str, Any]]) -> None:
+        await self.call_raw(
+            "answerInlineQuery",
+            inline_query_id=query_id,
+            results=[dict(result) for result in results],
+            cache_time=0,
+            is_personal=True,
+        )
+
+    async def set_name(self, name: str) -> None:
+        await self.call_raw("setMyName", name=name[:64])
+
+    async def request_managed_bot(
+        self, chat_id: int, request_id: int, name: str, username: str
+    ) -> None:
+        button = {
+            "text": "Создать моего агента",
+            "request_managed_bot": {
+                "request_id": request_id,
+                "suggested_name": name,
+                "suggested_username": username,
+            },
+        }
+        await self.call_raw(
+            "sendMessage",
+            chat_id=chat_id,
+            text="Создайте собственного бота-агента: он будет говорить от вашего имени.",
+            reply_markup={
+                "keyboard": [[button]],
+                "one_time_keyboard": True,
+                "resize_keyboard": True,
+            },
+        )
+
+    async def managed_bot_token(self, bot_id: int) -> str:
+        return str(await self.call_raw("getManagedBotToken", user_id=bot_id))
+
+    async def replace_managed_bot_token(self, bot_id: int) -> str:
+        return str(await self.call_raw("replaceManagedBotToken", user_id=bot_id))
+
+    async def set_managed_bot_access(
+        self, bot_id: int, restricted: bool, user_ids: Sequence[int]
+    ) -> None:
+        params: dict[str, Any] = {"user_id": bot_id, "is_access_restricted": restricted}
+        if restricted:
+            params["added_user_ids"] = list(user_ids)
+        await self.call_raw("setManagedBotAccessSettings", **params)
+
+    async def set_description(self, text: str) -> None:
+        await self.call_raw("setMyDescription", description=text[:512])
+
+    async def _own(self, update: Update) -> Update:
+        if isinstance(update, BotMessageUpdate):
+            return replace(update, bot_id=await self.bot_id())
+        return update
 
     @staticmethod
     def _map_update(raw: dict[str, Any]) -> Update:
@@ -206,7 +279,7 @@ class AiogramAdapter:
                 update = await self._webhook_updates.get()
                 if update is None:
                     return
-                yield update
+                yield await self._own(update)
             return
         offset = 0
         while not self._closed:
@@ -227,7 +300,7 @@ class AiogramAdapter:
                     )
             for raw in responses:
                 offset = int(raw["update_id"]) + 1
-                yield self._map_update(raw)
+                yield await self._own(self._map_update(raw))
 
     async def set_webhook(self, url: str, secret_token: str) -> None:
         await self.call_raw(

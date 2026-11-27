@@ -2,8 +2,12 @@ from collections.abc import Hashable
 
 import structlog
 
+from envoy.app.agent_flow import CALLBACK_PREFIX, AgentFlow
 from envoy.app.execution_flow import ExecutionFlow
+from envoy.app.invitations import AGENT_PREFIX, InvitationFlow
 from envoy.app.locks import SessionLocks, session_key
+from envoy.app.managed_bot_flow import ManagedBotFlow
+from envoy.app.mandate_widget import MandateWidgetFlow
 from envoy.app.owner_flow import OwnerFlow
 from envoy.app.ports import (
     BusinessConnectionRepository,
@@ -17,9 +21,13 @@ from envoy.app.widget_queries import WidgetQueryFlow
 from envoy.app.window import ReplyWindow
 from envoy.domain.ids import owner_for_user
 from envoy.domain.telegram import (
+    BotMessageUpdate,
     BusinessConnectionUpdate,
     BusinessMessageUpdate,
     CallbackUpdate,
+    GuestMessageUpdate,
+    InlineQueryUpdate,
+    ManagedBotUpdate,
     MessageUpdate,
     Update,
     WidgetQueryUpdate,
@@ -61,6 +69,10 @@ class UpdateProcessor:
         window: ReplyWindow,
         locks: SessionLocks,
         widgets: WidgetQueryFlow | None = None,
+        agents: AgentFlow | None = None,
+        invitations: InvitationFlow | None = None,
+        mandate_widget: MandateWidgetFlow | None = None,
+        managed: ManagedBotFlow | None = None,
     ) -> None:
         self._ledger = ledger
         self._inbound = inbound
@@ -72,8 +84,16 @@ class UpdateProcessor:
         self._window = window
         self._locks = locks
         self._widgets = widgets
+        self._agents = agents
+        self._invitations = invitations
+        self._mandate_widget = mandate_widget
+        self.managed = managed
 
     async def process(self, update: Update) -> None:
+        if isinstance(update, BotMessageUpdate):
+            if self._agents is not None:
+                await self._agents.receive(update)
+            return
         if await self._ledger.begin(update.update_id) == "done":
             return
         result = await self._inbound.check(update)
@@ -90,16 +110,37 @@ class UpdateProcessor:
         match update:
             case BusinessConnectionUpdate():
                 await self._connections.upsert(update.connection)
+            case ManagedBotUpdate():
+                if self.managed is not None:
+                    await self.managed.reconcile(update)
+            case GuestMessageUpdate():
+                if self._invitations is not None:
+                    await self._invitations.on_guest(update)
+            case InlineQueryUpdate():
+                if self._invitations is not None:
+                    await self._invitations.on_inline(update)
+            case MessageUpdate() if sender == "counterpart":
+                if self._invitations is not None:
+                    await self._invitations.on_private(update)
             case MessageUpdate():
                 text = (update.text or "").strip()
-                if text.split(maxsplit=1)[:1] == ["/start"]:
+                command = text.split(maxsplit=1)[:1]
+                if command == ["/start"]:
                     await self._owner_flow.on_start(update.chat_id)
+                elif command == ["/agent"] and self._agents is not None:
+                    await self._agents.on_command(update)
+                elif command == ["/draft"] and self._mandate_widget is not None:
+                    await self._mandate_widget.send(update.user_id)
+                elif command == ["/mybot"] and self.managed is not None:
+                    await self.managed.request(owner_for_user(update.user_id))
                 else:
                     await self._owner_flow.on_text(
                         owner_for_user(update.user_id), update.chat_id, text
                     )
             case CallbackUpdate():
-                if update.data.startswith("mandate_"):
+                if update.data.startswith(CALLBACK_PREFIX) and self._agents is not None:
+                    await self._agents.on_callback(update)
+                elif update.data.startswith("mandate_"):
                     await self._owner_flow.on_callback(owner_for_user(update.user_id), update)
                 else:
                     record = await self._sessions_flow.callback_session(update)
@@ -118,11 +159,20 @@ class UpdateProcessor:
             if sender == "counterpart":
                 await self._window.record_incoming(update.connection_id, update.chat_id)
             if sender == "owner_in_business_chat" and not update.done_task_ids:
+                if (update.text or "").strip() == "/invite" and self._invitations is not None:
+                    active = await self._sessions.find_active(update.connection_id, update.chat_id)
+                    if active is not None:
+                        await self._invitations.invite(active)
+                    return
                 await self._sessions_flow.on_owner_command(update)
                 return
             record = await self._sessions.find_active(update.connection_id, update.chat_id)
             if record is None:
                 return
+            if self._invitations is not None:
+                route = await self._invitations.repo.route(record.id)
+                if route is not None and route.startswith(AGENT_PREFIX):
+                    return
             if update.done_task_ids:
                 await self._execution.on_tasks_done(record, update)
                 await self._sessions_flow.present(record)

@@ -14,6 +14,11 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  NODE_VERSION: "24.14.1"
+  TLA_VERSION: v1.7.4
+  TLA_SHA256: 936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
+
 jobs:
   lint:
     name: Lint
@@ -40,10 +45,40 @@ jobs:
       - name: Check import contracts
         run: poetry run lint-imports
 
-  tests:
-    name: Python tests
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: miniapp/package-lock.json
+
+      - name: Check Mini App types
+        run: |
+          npm --prefix miniapp ci --no-audit --no-fund
+          npm --prefix miniapp run typecheck
+
+  diff:
+    name: Diff
     runs-on: ubuntu-26.04
-    timeout-minutes: 15
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18.7
+        env:
+          POSTGRES_USER: envoy
+          POSTGRES_PASSWORD: envoy-ci
+          POSTGRES_DB: envoy_diff
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U envoy -d envoy_diff"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      ENVOY_DATABASE_URL: postgresql+asyncpg://envoy:envoy-ci@localhost:5432/envoy_diff
+      ENVOY_AGENT_KEY: "1111111111111111111111111111111111111111111111111111111111111111"
+      ENVOY_MASTER_KEY: "2222222222222222222222222222222222222222222222222222222222222222"
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -53,11 +88,39 @@ jobs:
       - name: Set up Python and Poetry
         uses: ./.github/actions/poetry
 
+      - name: Check models against migrations
+        run: |
+          poetry run alembic upgrade head
+          poetry run alembic check
+
+      - name: Check working tree is clean
+        run: test -z "$(git status --porcelain --untracked-files=no)"
+
+  build:
+    name: Build (${{ matrix.part }})
+    needs: [lint, diff]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [python, compose, miniapp, tlc, image]
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python and Poetry
+        if: matrix.part == 'python'
+        uses: ./.github/actions/poetry
+
       - name: Run pytest
+        if: matrix.part == 'python'
         run: poetry run pytest --junitxml=test-results/junit.xml -o junit_family=xunit1
 
       - name: Publish test report
-        if: ${{ !cancelled() && hashFiles('test-results/junit.xml') != '' }}
+        if: ${{ matrix.part == 'python' && !cancelled() && hashFiles('test-results/junit.xml') != '' }}
         uses: mikepenz/action-junit-report@v6
         with:
           report_paths: test-results/junit.xml
@@ -65,50 +128,95 @@ jobs:
           require_tests: true
           include_time_in_summary: true
 
-      - name: Summarize coverage
-        if: ${{ !cancelled() && hashFiles('.coverage') != '' }}
-        run: poetry run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Check journal and crypto coverage
+      - name: Check core coverage
+        if: matrix.part == 'python'
         run: |
-          poetry run coverage report --include='*/envoy/journal/*,*/envoy/crypto/*,*/envoy/engine/*' --fail-under=90
+          poetry run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+          poetry run coverage report --include='*/envoy/journal/*,*/envoy/crypto/*,*/envoy/engine/*,*/envoy/protocol/*' --fail-under=90
           poetry run coverage json -o .coverage.json
           poetry run python scripts/check_coverage.py .coverage.json
 
-  docker:
-    name: "Install: Docker"
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    steps:
-      - name: Check out
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
       - name: Validate Compose configurations
+        if: matrix.part == 'compose'
         run: |
           cp .env.example .env
           docker compose -f compose.yaml config --quiet
           docker compose -f compose.yaml -f compose.dev.yaml config --quiet
           docker compose -f compose.yaml -f compose.test.yaml --profile test config --quiet
+          docker compose -f compose.federation.yaml config --quiet
           rm .env
 
       - name: Generate test environment
         id: test-env
+        if: matrix.part == 'compose'
         run: python3 scripts/create_test_env.py
 
-      - name: Start PostgreSQL and apply migrations
-        run: make up
-
       - name: Run Compose tests
-        run: make test
+        if: matrix.part == 'compose'
+        run: |
+          make up
+          make migrate
+          make test
+
+      - name: Run two-operator federation tests
+        if: matrix.part == 'compose'
+        run: make test-federation
+
+      - name: Stop Compose services
+        if: ${{ always() && matrix.part == 'compose' && steps.test-env.outcome == 'success' }}
+        run: make down
+
+      - name: Set up Node
+        if: matrix.part == 'miniapp'
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: miniapp/package-lock.json
+
+      - name: Test and build Mini App
+        if: matrix.part == 'miniapp'
+        run: |
+          npm --prefix miniapp ci --no-audit --no-fund
+          npm --prefix miniapp test
+          npm --prefix miniapp run build
+
+      - name: Set up Java
+        if: matrix.part == 'tlc'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Check TLA+ model
+        if: matrix.part == 'tlc'
+        run: |
+          curl -fsSL -o tla2tools.jar "https://github.com/tlaplus/tlaplus/releases/download/${TLA_VERSION}/tla2tools.jar"
+          echo "${TLA_SHA256}  tla2tools.jar" | sha256sum -c -
+          java -XX:+UseParallelGC -jar tla2tools.jar -workers auto -config formal/Negotiation.cfg formal/Negotiation.tla
+          java -XX:+UseParallelGC -jar tla2tools.jar -workers auto -config formal/NegotiationLive.cfg formal/Negotiation.tla
+
+      - name: Set up Buildx
+        if: matrix.part == 'image'
+        uses: docker/setup-buildx-action@v3
 
       - name: Build runtime image
-        run: docker build --target runtime -f docker/Dockerfile -t envoy-phase0-runtime .
+        if: matrix.part == 'image'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: runtime
+          load: true
+          push: false
+          tags: envoy-runtime:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Check runtime image
+        if: matrix.part == 'image'
         run: |
-          docker run --rm -i envoy-phase0-runtime python - <<'PY'
+          docker run --rm -i envoy-runtime:ci python - <<'PY'
           import importlib.util
           import os
           import shutil
@@ -118,8 +226,67 @@ jobs:
               assert shutil.which(name) is None
               assert importlib.util.find_spec(name) is None
           assert not os.path.exists("/app/.env")
+          assert os.path.isfile("/app/miniapp/dist/index.html")
           PY
 
-      - name: Stop Compose services
-        if: ${{ always() && steps.test-env.outcome == 'success' }}
-        run: make down
+  deploy:
+    name: Deploy
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+
+      - name: Build and push runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+
+  cleanup:
+    name: Cleanup
+    needs: deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deploy.result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - name: Delete untagged image versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: envoy
+          package-type: container
+          min-versions-to-keep: 10
+          delete-only-untagged-versions: true

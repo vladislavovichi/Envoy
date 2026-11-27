@@ -6,6 +6,7 @@
       'closed',
       'delivered',
       'escalated',
+      'peer_message',
     ]),
     'CLOSED': list([
     ]),
@@ -14,6 +15,7 @@
       'commitment_done',
       'delivered',
       'escalated',
+      'peer_message',
     ]),
     'INIT': list([
       'closed',
@@ -27,12 +29,14 @@
       'escalated',
       'intent_parsed',
       'mandate_attested',
+      'peer_message',
     ]),
     'PENDING_OWNER': list([
       'closed',
       'delivered',
       'escalated',
       'owner_resolved',
+      'peer_message',
     ]),
   })
 # ---

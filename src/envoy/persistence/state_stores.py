@@ -1,4 +1,4 @@
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import date, datetime
 from types import MappingProxyType
@@ -12,7 +12,14 @@ from envoy.app.ports import Job, JobKind, LedgerStatus, SessionRecord, WidgetRef
 from envoy.crypto.aead import ContentCipher
 from envoy.domain.ids import MandateId, OwnerId, SessionId
 from envoy.domain.telegram import BusinessConnection
-from envoy.mandate.ports import MandateNotFound, MandateStateError, MandateStatus, StoredMandate
+from envoy.mandate.ports import (
+    Attestation,
+    MandateNotFound,
+    MandateStateError,
+    MandateStatus,
+    StoredMandate,
+    check_signed_activation,
+)
 from envoy.mandate.schema import Mandate
 from envoy.persistence.models import (
     BusinessChatRow,
@@ -37,6 +44,9 @@ class PgMandateStore:
         self._cipher = cipher
         self._key = master_key
 
+    def record_of(self, row: MandateRow) -> StoredMandate:
+        return self._record(row)
+
     def _record(self, row: MandateRow) -> StoredMandate:
         body = self._cipher.decrypt(self._key, row.body_ciphertext, row.id.bytes)
         return StoredMandate(
@@ -47,6 +57,7 @@ class PgMandateStore:
             row.salt,
             cast(MandateStatus, row.status),
             row.signature,
+            cast(Attestation, row.attestation),
         )
 
     async def save_draft(self, owner: OwnerId, mandate: Mandate, salt: bytes) -> StoredMandate:
@@ -102,6 +113,18 @@ class PgMandateStore:
     async def activate(self, mandate_id: MandateId, signature: bytes) -> StoredMandate:
         return await self._transition(mandate_id, "active", signature)
 
+    async def activate_signed(
+        self,
+        owner: OwnerId,
+        mandate_id: MandateId,
+        expected_version: int | None,
+        signature: bytes,
+    ) -> StoredMandate:
+        async with self._sessions.begin() as db:
+            return await activate_signed_in(
+                db, self._record, owner, mandate_id, expected_version, signature
+            )
+
     async def discard(self, mandate_id: MandateId) -> StoredMandate:
         return await self._transition(mandate_id, "discarded", None)
 
@@ -113,6 +136,33 @@ class PgMandateStore:
                 )
             )
             return None if row is None else self._record(row)
+
+
+async def activate_signed_in(
+    db: AsyncSession,
+    record_of: Callable[[MandateRow], StoredMandate],
+    owner: OwnerId,
+    mandate_id: MandateId,
+    expected_version: int | None,
+    signature: bytes,
+) -> StoredMandate:
+    await db.execute(select(func.pg_advisory_xact_lock(func.hashtext(str(owner)))))
+    row = await db.get(MandateRow, mandate_id, with_for_update=True)
+    if row is None:
+        raise MandateNotFound(str(mandate_id))
+    current_row = await db.scalar(
+        select(MandateRow).where(MandateRow.owner_id == owner, MandateRow.status == "active")
+    )
+    current = None if current_row is None else record_of(current_row)
+    if not check_signed_activation(record_of(row), current, owner, expected_version, signature):
+        return record_of(row)
+    if current_row is not None:
+        current_row.status = "superseded"
+    row.status = "active"
+    row.signature = signature
+    row.attestation = "owner"
+    await db.flush()
+    return record_of(row)
 
 
 def _session(row: SessionRow) -> SessionRecord:

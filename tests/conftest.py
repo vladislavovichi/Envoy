@@ -14,7 +14,10 @@ from envoy.ports.rng import SeededRng
 ALL_TABLES = (
     "journal_entries, entry_keys, mandates, sessions, business_connections, business_chats, "
     "processed_updates, scheduled_jobs, llm_usage, escalation_widgets, summary_widgets, "
-    "owner_summaries, owner_summary_topics"
+    "owner_summaries, owner_summary_topics, peer_pins, peer_key_history, "
+    "protocol_sessions, protocol_updates, protocol_nonces, protocol_evidence, "
+    "owner_keys, signing_challenges, owner_delegations, invitations, session_routes, "
+    "agent_authorizations, mandate_widgets, managed_bots"
 )
 
 

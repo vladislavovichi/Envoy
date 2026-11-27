@@ -30,6 +30,19 @@ class FakeBotApiServer:
         self._last_incoming: dict[tuple[str, int], float] = {}
         self._next_update_id = 1_000_000
         self.widgets: dict[int, dict[str, Any]] = {}
+        self.description = ""
+        self.managed: dict[int, str] = {}
+        self.bot_queues: dict[int, dict[int, dict[str, Any]]] = {}
+        self.bot_counters: dict[int, int] = defaultdict(int)
+        self.bot_events: dict[int, asyncio.Event] = {}
+        self.bot_traffic: list[tuple[int, int, str]] = []
+        self.bot_tokens: dict[str, int] = {}
+        self.drop_bot_messages: list[Callable[[int, int, str], bool]] = []
+        self.revoked_tokens: set[str] = set()
+        self.access: dict[int, dict[str, Any]] = {}
+        self.profiles: dict[str, dict[str, str]] = {}
+        self.guest_answered: dict[str, Any] = {}
+        self.inline_answers: list[dict[str, Any]] = []
         self.widget_edits: list[dict[str, Any]] = []
         self.widget_answers: list[dict[str, Any]] = []
         self._widget_queries: dict[str, float] = {}
@@ -118,6 +131,108 @@ class FakeBotApiServer:
         )
         return identity
 
+    def inject_bot_message(
+        self, from_bot_id: int, text: str, *, update_id: int | None = None
+    ) -> int:
+        identity = update_id if update_id is not None else self._update_id()
+        self.inject_update(
+            {
+                "update_id": identity,
+                "message": {
+                    "message_id": identity,
+                    "date": int(self.now()),
+                    "chat": {"id": from_bot_id, "type": "private"},
+                    "from": {"id": from_bot_id, "is_bot": True, "first_name": "Agent"},
+                    "text": text,
+                },
+            }
+        )
+        return identity
+
+    def register_bot(self, token: str) -> int:
+        bot_id = int(token.split(":", 1)[0])
+        self.bot_tokens[token] = bot_id
+        self.bot_queues.setdefault(bot_id, {})
+        self.bot_events.setdefault(bot_id, asyncio.Event())
+        return bot_id
+
+    def inject_for_bot(self, bot_id: int, update: dict[str, Any]) -> int:
+        self.bot_counters[bot_id] += 1
+        identity = self.bot_counters[bot_id]
+        self.bot_queues[bot_id][identity] = {**deepcopy(update), "update_id": identity}
+        self.bot_events[bot_id].set()
+        return identity
+
+    def _bot_of(self, token: str) -> int | None:
+        return self.bot_tokens.get(token)
+
+    async def _bot_updates(self, bot_id: int, params: dict[str, Any]) -> list[dict[str, Any]]:
+        queue = self.bot_queues[bot_id]
+        offset = int(params.get("offset", 0))
+        for key in [key for key in queue if key < offset]:
+            del queue[key]
+        timeout = min(max(float(params.get("timeout", 0)), 0), 30)
+        if not queue and timeout:
+            event = self.bot_events[bot_id]
+            event.clear()
+            try:
+                await asyncio.wait_for(event.wait(), timeout=timeout)
+            except TimeoutError:
+                pass
+        return [queue[key] for key in sorted(queue)]
+
+    def inject_managed_bot(self, user_id: int, bot_id: int, username: str) -> int:
+        self.managed.setdefault(bot_id, f"{bot_id}:managed")
+        identity = self._update_id()
+        self.inject_update(
+            {
+                "update_id": identity,
+                "managed_bot": {
+                    "user": {"id": user_id, "is_bot": False, "first_name": "Owner"},
+                    "bot": {
+                        "id": bot_id,
+                        "is_bot": True,
+                        "first_name": "Agent",
+                        "username": username,
+                    },
+                },
+            }
+        )
+        return identity
+
+    def inject_guest_message(self, user_id: int, chat_id: int, text: str) -> str:
+        identity = self._update_id()
+        query = f"gq{identity}"
+        self.inject_update(
+            {
+                "update_id": identity,
+                "guest_message": {
+                    "message_id": identity,
+                    "date": int(self.now()),
+                    "chat": {"id": chat_id, "type": "group"},
+                    "from": {"id": user_id, "is_bot": False, "first_name": "Guest"},
+                    "text": text,
+                    "guest_query_id": query,
+                },
+            }
+        )
+        return query
+
+    def inject_inline_query(self, user_id: int, query: str) -> str:
+        identity = self._update_id()
+        self.inject_update(
+            {
+                "update_id": identity,
+                "inline_query": {
+                    "id": f"iq{identity}",
+                    "from": {"id": user_id, "is_bot": False, "first_name": "User"},
+                    "query": query,
+                    "offset": "",
+                },
+            }
+        )
+        return f"iq{identity}"
+
     def inject_widget_query(
         self,
         user_id: int,
@@ -172,7 +287,12 @@ class FakeBotApiServer:
                 params.update(await request.json())
             else:
                 params.update(await request.post())
-        self.calls.append(RecordedCall(method, deepcopy(params)))
+        token = request.match_info["token"]
+        self.calls.append(RecordedCall(method, deepcopy(params), token))
+        if token in self.revoked_tokens:
+            return web.json_response(
+                {"ok": False, "error_code": 401, "description": "Unauthorized"}, status=401
+            )
         if self._failures[method]:
             failure = self._failures[method].popleft()
             body: dict[str, Any] = {
@@ -189,6 +309,49 @@ class FakeBotApiServer:
                 "is_bot": True,
                 "first_name": "Envoy",
                 "username": "envoy_bot",
+            }
+        elif (
+            method == "sendMessage"
+            and self._bot_of(token) is not None
+            and (int(params.get("chat_id", 0)) in self.bot_queues)
+        ):
+            sender = self._bot_of(token) or 0
+            target = int(params["chat_id"])
+            text = str(params["text"])
+            self.bot_traffic.append((sender, target, text))
+            dropped = next(
+                (rule for rule in self.drop_bot_messages if rule(sender, target, text)), None
+            )
+            if dropped is not None:
+                self.drop_bot_messages.remove(dropped)
+                return web.json_response(
+                    {
+                        "ok": True,
+                        "result": {
+                            "message_id": 0,
+                            "date": 0,
+                            "chat": {"id": target},
+                            "text": text,
+                        },
+                    }
+                )
+            self.bot_counters[target] += 1
+            self.bot_queues[target][self.bot_counters[target]] = {
+                "update_id": self.bot_counters[target],
+                "message": {
+                    "message_id": self.bot_counters[target],
+                    "date": int(self.now()),
+                    "chat": {"id": sender, "type": "private"},
+                    "from": {"id": sender, "is_bot": True, "first_name": f"bot{sender}"},
+                    "text": str(params["text"]),
+                },
+            }
+            self.bot_events[target].set()
+            result = {
+                "message_id": self.bot_counters[target],
+                "date": 1_767_225_600,
+                "chat": {"id": target, "type": "private"},
+                "text": params["text"],
             }
         elif method == "sendMessage":
             if "chat_id" not in params or "text" not in params:
@@ -259,6 +422,8 @@ class FakeBotApiServer:
                 return _bad_request("callback_query_id required")
             self.callback_answers.append(params)
             result = True
+        elif method == "getUpdates" and self._bot_of(token) is not None:
+            result = await self._bot_updates(self._bot_of(token) or 0, params)
         elif method == "getUpdates":
             offset = int(params.get("offset", 0))
             self._updates = {key: value for key, value in self._updates.items() if key >= offset}
@@ -270,6 +435,51 @@ class FakeBotApiServer:
                 except TimeoutError:
                     pass
             result = [self._updates[key] for key in sorted(self._updates)]
+        elif method == "answerGuestQuery":
+            if "guest_query_id" not in params or "result" not in params:
+                return _bad_request("Bad Request: guest_query_id and result required")
+            query = str(params["guest_query_id"])
+            if query in self.guest_answered:
+                return _bad_request("Bad Request: QUERY_ID_INVALID")
+            self.guest_answered[query] = _json_param(params["result"])
+            result = {"inline_message_id": f"im{query}"}
+        elif method == "answerInlineQuery":
+            results = _json_param(params.get("results"))
+            if "inline_query_id" not in params or not isinstance(results, list):
+                return _bad_request("Bad Request: inline_query_id and results required")
+            if len(results) > 50:
+                return _bad_request("Bad Request: RESULTS_TOO_MUCH")
+            self.inline_answers.append(
+                {"inline_query_id": params["inline_query_id"], "results": results}
+            )
+            result = True
+        elif method in ("getManagedBotToken", "replaceManagedBotToken"):
+            bot = int(params.get("user_id", 0))
+            if bot not in self.managed:
+                return _bad_request("Bad Request: bot not managed")
+            if method == "replaceManagedBotToken":
+                self.revoked_tokens.add(self.managed[bot])
+                self.managed[bot] = f"{bot}:replaced{len(self.revoked_tokens)}"
+            result = self.managed[bot]
+        elif method == "setManagedBotAccessSettings":
+            bot = int(params.get("user_id", 0))
+            users = _json_param(params.get("added_user_ids")) or []
+            if bot not in self.managed:
+                return _bad_request("Bad Request: bot not managed")
+            if len(users) > 10:
+                return _bad_request("Bad Request: too many users")
+            self.access[bot] = {
+                "restricted": _flag(params.get("is_access_restricted")),
+                "users": users,
+            }
+            result = True
+        elif method == "setMyName":
+            self.profiles.setdefault(token, {})["name"] = str(params.get("name", ""))
+            result = True
+        elif method == "setMyDescription":
+            self.profiles.setdefault(token, {})["description"] = str(params.get("description", ""))
+            self.description = str(params.get("description", ""))
+            result = True
         elif method == "setWebhook":
             self.webhook = params
             result = True

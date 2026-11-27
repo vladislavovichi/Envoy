@@ -20,6 +20,7 @@ from envoy.domain.events import (
     Outcome,
     OwnerResolved,
     PartyRole,
+    PeerMessage,
     SessionEvent,
     SessionOpened,
     entry_type_of,
@@ -44,6 +45,7 @@ TRANSITIONS: Mapping[SessionState, frozenset[JournalEntryType]] = MappingProxyTy
         SessionState.INIT: frozenset({JournalEntryType.session_opened, JournalEntryType.closed}),
         SessionState.NEGOTIATING: frozenset(
             {
+                JournalEntryType.peer_message,
                 JournalEntryType.mandate_attested,
                 JournalEntryType.disclosed,
                 JournalEntryType.intent_parsed,
@@ -55,6 +57,7 @@ TRANSITIONS: Mapping[SessionState, frozenset[JournalEntryType]] = MappingProxyTy
         ),
         SessionState.PENDING_OWNER: frozenset(
             {
+                JournalEntryType.peer_message,
                 JournalEntryType.owner_resolved,
                 JournalEntryType.escalated,
                 JournalEntryType.delivered,
@@ -63,6 +66,7 @@ TRANSITIONS: Mapping[SessionState, frozenset[JournalEntryType]] = MappingProxyTy
         ),
         SessionState.AGREED: frozenset(
             {
+                JournalEntryType.peer_message,
                 JournalEntryType.delivered,
                 JournalEntryType.escalated,
                 JournalEntryType.checklist_opened,
@@ -71,6 +75,7 @@ TRANSITIONS: Mapping[SessionState, frozenset[JournalEntryType]] = MappingProxyTy
         ),
         SessionState.EXECUTING: frozenset(
             {
+                JournalEntryType.peer_message,
                 JournalEntryType.delivered,
                 JournalEntryType.escalated,
                 JournalEntryType.commitment_done,
@@ -127,7 +132,7 @@ def apply(view: SessionView, event: SessionEvent) -> SessionView:
     match event:
         case SessionOpened():
             return replace(view, state=SessionState.NEGOTIATING, opened=event)
-        case MandateAttested():
+        case MandateAttested() | PeerMessage():
             return view
         case Disclosed():
             return replace(view, disclosed=True)

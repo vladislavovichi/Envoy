@@ -5,10 +5,12 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from envoy.app.mandate_widget import MandateCard
 from envoy.app.ports import OwnerTarget, SummaryWidgetRef, WidgetRef
-from envoy.domain.ids import OwnerId, SessionId
+from envoy.domain.ids import MandateId, OwnerId, SessionId
 from envoy.persistence.models import (
     EscalationWidgetRow,
+    MandateCardRow,
     OwnerSummaryRow,
     OwnerSummaryTopicRow,
     SummaryWidgetRow,
@@ -138,4 +140,53 @@ class PgOwnerViewStore:
                 statement.on_conflict_do_update(
                     index_elements=[OwnerSummaryTopicRow.owner_id], set_={"thread_id": thread_id}
                 )
+            )
+
+
+class PgMandateCardStore:
+    def __init__(self, sessions: Sessions) -> None:
+        self._sessions = sessions
+
+    async def put(self, card: MandateCard) -> None:
+        values = {
+            "chat_id": card.chat_id,
+            "message_id": card.message_id,
+            "owner_id": card.owner,
+            "user_id": card.user_id,
+            "revision": card.revision,
+            "draft_id": card.draft_id,
+            "slots": [slot.isoformat() for slot in card.slots],
+            "selected": list(card.selected),
+            "issues": list(card.issues),
+        }
+        statement = insert(MandateCardRow).values(**values)
+        async with self._sessions.begin() as db:
+            await db.execute(
+                statement.on_conflict_do_update(
+                    index_elements=[MandateCardRow.chat_id, MandateCardRow.message_id],
+                    set_={
+                        key: value
+                        for key, value in values.items()
+                        if key not in ("chat_id", "message_id")
+                    },
+                )
+            )
+
+    async def find(self, chat_id: int, message_id: int) -> MandateCard | None:
+        from datetime import datetime
+
+        async with self._sessions() as db:
+            row = await db.get(MandateCardRow, (chat_id, message_id))
+            if row is None:
+                return None
+            return MandateCard(
+                OwnerId(row.owner_id),
+                row.user_id,
+                row.chat_id,
+                row.message_id,
+                row.revision,
+                MandateId(row.draft_id),
+                tuple(datetime.fromisoformat(slot) for slot in row.slots),
+                tuple(bool(flag) for flag in row.selected),
+                tuple(str(issue) for issue in row.issues),
             )

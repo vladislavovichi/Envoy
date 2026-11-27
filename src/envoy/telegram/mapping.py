@@ -2,11 +2,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 from envoy.domain.telegram import (
+    BotMessageUpdate,
     BusinessConnection,
     BusinessConnectionUpdate,
     BusinessMessageUpdate,
     CallbackUpdate,
     ContentKind,
+    GuestMessageUpdate,
+    InlineQueryUpdate,
+    ManagedBotUpdate,
     MessageUpdate,
     TextEntity,
     UnsupportedUpdate,
@@ -21,6 +25,9 @@ ALLOWED_UPDATES = (
     "business_message",
     "edited_business_message",
     "widget_query",
+    "guest_message",
+    "inline_query",
+    "managed_bot",
 )
 SENSITIVE_ENTITIES = frozenset({"bank_card_number", "ton_address"})
 SERVICE_FIELDS = frozenset(
@@ -88,8 +95,39 @@ def _widget_query(update_id: int, query: dict[str, Any], received_at: datetime) 
 
 def _map(raw: dict[str, Any], received_at: datetime) -> Update:
     update_id = int(raw["update_id"])
+    managed = raw.get("managed_bot")
+    if isinstance(managed, dict):
+        return ManagedBotUpdate(
+            update_id=update_id,
+            user_id=int(managed["user"]["id"]),
+            bot_id=int(managed["bot"]["id"]),
+            bot_username=str(managed["bot"].get("username", "")),
+        )
+    if isinstance(raw.get("message"), dict) and isinstance(
+        raw["message"].get("managed_bot_created"), dict
+    ):
+        created = raw["message"]["managed_bot_created"]["bot"]
+        return ManagedBotUpdate(
+            update_id=update_id,
+            user_id=int(raw["message"]["from"]["id"]),
+            bot_id=int(created["id"]),
+            bot_username=str(created.get("username", "")),
+        )
     if isinstance(raw.get("message"), dict):
-        return MessageUpdate(update_id=update_id, **_message_fields(raw["message"]))
+        message = raw["message"]
+        sender = message.get("from") or {}
+        chat = message.get("chat") or {}
+        text = message.get("text")
+        if sender.get("is_bot") and chat.get("type") == "private" and isinstance(text, str):
+            return BotMessageUpdate(
+                bot_id=0,
+                update_id=update_id,
+                from_bot_id=int(sender["id"]),
+                chat_id=int(chat["id"]),
+                text=text,
+                received_at=received_at,
+            )
+        return MessageUpdate(update_id=update_id, **_message_fields(message))
     for key, edited in (("business_message", False), ("edited_business_message", True)):
         message = raw.get(key)
         if isinstance(message, dict):
@@ -116,6 +154,24 @@ def _map(raw: dict[str, Any], received_at: datetime) -> Update:
     query = raw.get("widget_query")
     if isinstance(query, dict):
         return _widget_query(update_id, query, received_at)
+    guest = raw.get("guest_message")
+    if isinstance(guest, dict) and guest.get("guest_query_id"):
+        text = guest.get("text")
+        return GuestMessageUpdate(
+            update_id=update_id,
+            guest_query_id=str(guest["guest_query_id"]),
+            user_id=int((guest.get("from") or {})["id"]),
+            chat_id=int(guest["chat"]["id"]),
+            text=text if isinstance(text, str) else None,
+        )
+    inline = raw.get("inline_query")
+    if isinstance(inline, dict):
+        return InlineQueryUpdate(
+            update_id=update_id,
+            query_id=str(inline["id"]),
+            user_id=int(inline["from"]["id"]),
+            query=str(inline.get("query", ""))[:256],
+        )
     connection = raw.get("business_connection")
     if isinstance(connection, dict):
         rights = connection.get("rights") or {}

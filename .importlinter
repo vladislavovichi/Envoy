@@ -10,6 +10,7 @@ type = forbidden
 source_modules =
     envoy.domain
     envoy.ports
+    envoy.protocol
     envoy.crypto
     envoy.mandate
     envoy.engine
@@ -42,6 +43,13 @@ source_modules =
     envoy.app.widget_queries
     envoy.app.daily_summary
     envoy.app.locks
+    envoy.app.agent_flow
+    envoy.app.agent_ports
+    envoy.app.miniapp
+    envoy.app.owner_signing
+    envoy.app.invitations
+    envoy.app.mandate_widget
+    envoy.app.managed_bot_flow
     envoy.widgets
     envoy.telegram.outbound
     envoy.telegram.ports
@@ -83,6 +91,7 @@ source_modules =
     envoy.engine
     envoy.execution
     envoy.journal
+    envoy.protocol
 forbidden_modules =
     envoy.telegram
     envoy.persistence

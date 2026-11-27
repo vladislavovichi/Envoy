@@ -284,3 +284,40 @@ async def test_queued_widget_transport_uses_chat_queue_and_answers_directly(adap
     finally:
         await queue.close()
     assert calls == ["send", "edit", "answer"]
+
+
+async def test_bot_to_bot_message_maps_with_own_bot_id_and_description(fake_bot_api) -> None:
+    from envoy.domain.telegram import BotMessageUpdate
+
+    adapter = AiogramAdapter("123456:TEST", fake_bot_api.base_url)
+    try:
+        fake_bot_api.inject_bot_message(777, "envoy/1:abc", update_id=90)
+        fake_bot_api.inject_update(
+            {
+                "update_id": 91,
+                "message": {
+                    "message_id": 1,
+                    "date": 1,
+                    "chat": {"id": -5, "type": "group"},
+                    "from": {"id": 778, "is_bot": True, "first_name": "Bot"},
+                    "text": "envoy/1:abc",
+                },
+            }
+        )
+        updates = adapter.updates()
+        first = await asyncio.wait_for(anext(updates), 2)
+        second = await asyncio.wait_for(anext(updates), 2)
+        await updates.aclose()
+        assert first == BotMessageUpdate(
+            bot_id=123456,
+            update_id=90,
+            from_bot_id=777,
+            chat_id=777,
+            text="envoy/1:abc",
+            received_at=first.received_at,
+        )
+        assert not isinstance(second, BotMessageUpdate)
+        await adapter.set_description("Envoy — ИИ-агент. Ключ агента: abcd")
+        assert fake_bot_api.description.endswith("abcd")
+    finally:
+        await adapter.close()

@@ -22,6 +22,13 @@ RUN poetry install --no-root --no-interaction
 COPY . .
 ENV PYTHONPATH=/app/src
 
+FROM node:24.14.1-slim AS miniapp
+WORKDIR /miniapp
+COPY miniapp/package.json miniapp/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY miniapp/ ./
+RUN npm test && npm run build
+
 FROM python:3.15.2-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -32,4 +39,5 @@ RUN groupadd --system envoy && useradd --system --gid envoy --home /app envoy
 COPY --from=deps /app/.venv /app/.venv
 COPY src ./src
 COPY alembic.ini ./
+COPY --from=miniapp /miniapp/dist ./miniapp/dist
 USER envoy
